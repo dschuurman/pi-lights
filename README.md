@@ -1,6 +1,6 @@
 # pi-lights
 
-Automates home lighting using Tradfri intelligent lights which use the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) Light Link 
+Automates home lighting using IKEA Trådfri intelligent lights which use the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) Light Link 
 wireless protocol. This code was written for a Raspberry Pi, but could be run on other Linux platforms as well.
 
 The code works using a daily schedule, using a timer to turn lights on at dusk (based on your location)
@@ -9,9 +9,9 @@ lights and a smart socket.
 
 ## Dependencies
 
-This project relies heavily on the [pytradfri](https://github.com/home-assistant-libs/pytradfri) package. 
+This project uses Python 3 and relies heavily on the [pytradfri](https://github.com/home-assistant-libs/pytradfri) package. 
 Other dependencies include astral, configparser, and flask.
-These packages can be installed as follows:
+These packages can all be installed from the command line as follows:
 ```
 $ pip3 install pytradfri astral configparser flask
 ```
@@ -30,10 +30,14 @@ in the same folder. Adjust the settings in `pi-lights.conf` to reflect your loca
 
 ## Imortant Security Notes
 
-This progam currently uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
+This program currently uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
 convenient web interface for status and control. Note that this code uses Flask’s built-in development server which is 
 [not designed to be particularly efficient, stable, or secure](https://flask.palletsprojects.com/en/master/server/).
 If you do use it, your host *must be running on a secure local network* since the flask web pages are open, unencrypted, and not particularly secure.
 
-The web interface can be useful for inital testing, and then later disabled. The `pi-lights.conf` configuration file 
-includes an option to enable or disable the web interface.
+Furthermore, flask and the timer object *operate in separate threads with shared access
+to state variables without using a mutex or synchronization*. This is not ideal nor is it considered good practice.
+
+The web interface is convenient for initial testing and setup. However, due to the security and
+synchronization concerns described above, it should later be disabled.
+The `pi-lights.conf` file includes an option to easily enable or disable the web interface.
