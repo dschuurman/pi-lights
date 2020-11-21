@@ -34,10 +34,5 @@ This program currently uses the [flask](https://palletsprojects.com/p/flask/) we
 convenient web interface for status and control. Note that this code uses Flask’s built-in development server which is 
 [not designed to be particularly efficient, stable, or secure](https://flask.palletsprojects.com/en/master/server/).
 If you do use it, your host *must be running on a secure local network* since the flask web pages are open, unencrypted, and not particularly secure.
-
-Furthermore, flask and the timer object *operate in separate threads with shared access
-to state variables without using a mutex or synchronization*. This is not ideal nor is it considered good practice.
-
-The web interface is convenient for initial testing and setup. However, due to the security and
-synchronization concerns described above, it should later be disabled.
-The `pi-lights.conf` file includes an option to easily enable or disable the web interface.
+The web interface is convenient for initial testing and setup. However, due to concerns described above, 
+the `pi-lights.conf` file includes an option to easily enable or disable the web interface.
