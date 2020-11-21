@@ -1,0 +1,63 @@
+<html>
+
+<head>
+    <title>Home Lights Automation</title>
+    <!-- Make the webpage more responsive to mobile browswers -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+
+<body>
+    <h2>Home Lights Automation</h2>
+    <p>
+        The following settings can be used to control or configure the operation of the lights and outlet.
+    </p>
+    <hr>
+
+    <h3>Lights and Outlet Status and Control</h3>
+
+    <b>Lights</b>
+    <br>Lights are: {{bulb_msg}}
+    <br>
+    <form action="" method="post">
+        <button name="bulb" type="submit" value="on">Lights ON</button>
+        <button name="bulb" type="submit" value="off">Lights OFF</button>
+    </form>
+
+    <br>
+    <b>Outlet</b>
+    <br>The outlet will typically be used to control a lamp.
+    <br>Outlet is: {{outlet_msg}}
+    <br>
+    <form action="" method="post">
+        <button name="outlet" type="submit" value="on">Outlet ON</button>
+        <button name="outlet" type="submit" value="off">Outlet OFF</button>
+    </form>
+
+    <hr>
+    <h3>Timer Control</h3>
+    <p>
+        The lights will be automatically turned on and off each day. The daily on-time is set to the dusk time and the off-time can be adjusted below.
+        <br>The current settings are as follows:
+        <br>{{status_msg|safe}}
+    </p>
+    <p>
+        <form method="POST" action="/off-time">
+            Select a new timer off-time:
+            <br><input type="time" name="off_time">
+            <input type="submit" value="Set new time">
+        </form>
+    </p>
+    <p>
+        <b>Timer Control of Outlet</b>
+        <br>An outlet may also be controlled by the timer <i>with</i> the lights.
+        <br>Currently timer control of the outlet is: {{outlet_enable_msg}}
+        <br>
+        <form action="" method="post">
+            <button name="outlet_enable" type="submit" value="on">ENABLE</button>
+            <button name="outlet_enable" type="submit" value="off">DISABLE</button>
+        </form>
+    </p>
+
+</body>
+
+</html>
