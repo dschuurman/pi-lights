@@ -59,7 +59,7 @@ class State:
         # Initialize dimmer setting
         self.dimmer_setting = dimmer_setting
 
-        # Use a lock to provide a mutex for thread synchronization
+        # Use a mutex for thread synchronization
         self.lock = Lock()
 
         # Turn off everything to start
@@ -82,6 +82,7 @@ class State:
         self.bulb_state = ON
         self.bulb_msg = 'ON'
         self.lock.release()
+        logging.debug('Lights turned on')
 
     def turn_off_lights(self):
         ''' Method to turn OFF all bulb(s)
@@ -93,6 +94,7 @@ class State:
         self.bulb_state = OFF
         self.bulb_msg = 'OFF'
         self.lock.release()
+        logging.debug('Lights turned off')
 
     def turn_on_outlet(self):
         ''' Method to turn ON outlet
@@ -103,6 +105,7 @@ class State:
         self.outlet_state = ON
         self.outlet_msg = "ON"
         self.lock.release()
+        logging.debug('Outlet turned on')
 
     def turn_off_outlet(self):
         ''' Method to turn OFF outlet
@@ -113,6 +116,7 @@ class State:
         self.outlet_state = OFF
         self.outlet_msg = "OFF"
         self.lock.release()
+        logging.debug('Outlet turned off')
 
     def disconnect(self):
         ''' Graceful disconnect from gateway
@@ -128,7 +132,7 @@ class Timer:
         self.state = state
         self.city = city
         self.dusk_time = self.get_dusk_time()
-        logging.info('Light on time (dusk): {} for {}\n'.format(self.dusk_time.strftime("%H:%M"),self.city))
+        logging.info('Light on time (dusk): {} for {}'.format(self.dusk_time.strftime("%H:%M"),self.city))
 
         # Initialize light on/off times
         self.lights_out_hour = lights_out_time.hour
@@ -139,36 +143,32 @@ class Timer:
         ''' Signal handler that runs every minute 
         '''
         current_time = datetime.now()
-        #print('Signal handler called with signal', signum, ' at ', datetime.now())  # Useful for debugging
+        logging.debug('Signal handler called with signal {} at {}'.format(signum,current_time))
 
         # Reset dusk time at the beginning of each new day
         if current_time.hour == 0 and current_time.minute == 0:
-            logging.info('Reset status for a new day at: {}'.format(datetime.now()))
-            # Set lights-out time for a new day
-            logging.info('Lights out time: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
-            # Determine dusk time for a new day
             self.dusk_time = self.get_dusk_time()
-            logging.info('Dusk time: {}\n'.format(self.dusk_time.strftime("%H:%M")))
+            logging.info('Dusk time for today: {}'.format(self.dusk_time.strftime("%H:%M")))
+            logging.info('Lights out time: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
 
         # Check if it's time for light(s) to come on
-        #if abs((current_time-self.dusk_time).total_seconds()) < 60:
         if current_time.hour == self.dusk_time.hour and current_time.minute == self.dusk_time.minute:
-            logging.info('*** Turning lights ON for the evening at {} ***\n'.format(datetime.now()))
+            logging.info('*** Turning lights ON for the evening at {} ***'.format(current_time))
             self.state.turn_on_lights()
 
             # If outlet is enabled then turn it on as well
             if self.state.outlet_enable:
-                logging.info('*** Turning outlet ON for the evening at {} ***\n'.format(datetime.now()))
+                logging.info('*** Turning outlet ON for the evening at {} ***'.format(current_time))
                 self.state.turn_on_outlet()
 
         # Check for lights out
         elif current_time.hour == self.lights_out_hour and current_time.minute == self.lights_out_minute:
-            logging.info('*** Turning lights OFF at {} ***\n'.format(datetime.now()))
+            logging.info('*** Turning lights OFF at {} ***'.format(current_time))
             self.state.turn_off_lights()
 
             # If outlet mode is enabled then turn it off as well
             if self.state.outlet_enable:
-                logging.info('*** Turning outlet off at {} ***\n'.format(datetime.now()))
+                logging.info('*** Turning outlet off at {} ***'.format(current_time))
                 self.state.turn_off_outlet()
 
     def set_lights_out_time(self, hour, minute):
@@ -270,7 +270,7 @@ class FlaskThread(Thread):
         '''
         time = request.form['off_time']
         if time == '':
-            logging.info('Invalid lights out time requested.')
+            logging.error('Invalid lights out time requested.')
             return render_template('off-time.html', status_msg="Invalid time"), 200
         t = time.split(':')
         self.timer.set_lights_out_time(int(t[0]),int(t[1]))
@@ -295,22 +295,33 @@ def sigint_handler(signum, frame):
 # Read other constants from configuration file (located in the same folder as the program)
 conf = configparser.ConfigParser()
 conf.read(os.path.join(os.path.abspath(os.path.dirname(__file__)),'pi-lights.conf'))
-GATEWAY_IP = conf.get('pi-lights', 'gateway_ip')
-SECURITY_KEY = conf.get('pi-lights', 'security_key')
-SECURITY_ID = conf.get('pi-lights', 'security_id')
-PORT = conf.getint('pi-lights', 'port')
-DIMMER_SETTING = conf.getint('pi-lights', 'dimmer_setting')      # Dimmer setting: out of 255
-CITY = conf.get('pi-lights', 'city')
-WEB_INTERFACE = conf.getboolean('pi-lights', 'web_interface')
-LOG_FILE = conf.get('pi-lights', 'logfile')
-OFF_TIME = conf.get('pi-lights', 'off_time')
 
-# Start logging
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, filemode='w')
+# Configuration settings that are mandatory
+try:
+    GATEWAY_IP = conf.get('pi-lights', 'gateway_ip')
+    SECURITY_KEY = conf.get('pi-lights', 'security_key')
+    SECURITY_ID = conf.get('pi-lights', 'security_id')
+except configparser.NoOptionError as e:
+    print('Missing parameter in configuration file: {}'.format(e))
+    sys.exit(os.EX_CONFIG)
+# Configuration settings with fallback values
+PORT = conf.getint('pi-lights', 'port',fallback=8080)
+DIMMER_SETTING = conf.getint('pi-lights', 'dimmer_setting',fallback=255)   # Dimmer setting out of 255
+CITY = conf.get('pi-lights', 'city',fallback='Detroit')
+WEB_INTERFACE = conf.getboolean('pi-lights', 'web_interface',fallback=False)
+OFF_TIME = conf.get('pi-lights', 'off_time',fallback='23:00')
+LOG_FILE = conf.get('pi-lights', 'logfile',fallback='/tmp/pi-lights.conf')
+LOG_LEVEL = conf.get('pi-lights', 'loglevel',fallback='info')
 
-# Log INFO messages or higher
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
+# Start logging and set logging level; default to INFO level
+if LOG_LEVEL == 'error':
+    logging.basicConfig(filename=LOG_FILE, level=logging.ERROR, filemode='w')
+elif LOG_LEVEL == 'debug':
+    logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG, filemode='w')
+else:
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO, filemode='w')
+
+# Start log file
 logging.info('Starting at {} with version'.format(datetime.now(),VERSION))
 logging.info('Gateway address: {}'.format(GATEWAY_IP))
 
@@ -333,13 +344,16 @@ if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.s
 lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
 logging.info('Timer off-time set to: {}'.format(lights_out_time))
 
+# setup a sigint handler
+signal.signal(signal.SIGINT, sigint_handler)
+
 # Create an object to track and control state of all lights and outlet
 state = State(DIMMER_SETTING)
 
 # Create an interval timer object
 timer = Timer(state, CITY, lights_out_time)
 
-# Start flask web server in a thread only if enabled in config file
+# Start flask web server in a thread if enabled in config file
 if WEB_INTERFACE:
     logging.info('Web interface ENABLED')
     server = FlaskThread(PORT,state,timer,LOG_FILE)
@@ -347,20 +361,17 @@ if WEB_INTERFACE:
 else:
     logging.info('Web interface DISABLED')
 
-# Since this is not a real-time operating system, adjust the ticks
-# so that they occur in the middle of each minute (when seconds=30)
-# to prevent potential issues with jitter near the boundary of a change in the minutes
+# Since this is not a real-time operating system, there will be timing jitter.
+# Set ticks to occur in the middle of each minute (when seconds=30)
+# to avoid any potential issues with jitter at the boundary of a change in minutes
 current_time = datetime.now()
 current_time = current_time.replace(second=30, microsecond=0)
 start_time = current_time + timedelta(seconds=SECONDS_PER_MINUTE)
 
 # Setup signal to call handler every minute on the 30 seconds
+logging.info('Timer handler will start at {}'.format(start_time.strftime("%H:%M:%S")))
 signal.signal(signal.SIGALRM, timer.handler)
 signal.setitimer(signal.ITIMER_REAL, start_time.timestamp()-time(), SECONDS_PER_MINUTE)
-logging.info('Timer handler established with first tick set for {}'.format(start_time.strftime("%H:%M:%S")))
-
-# setup a sigint handler
-signal.signal(signal.SIGINT, sigint_handler)
 
 # Continuously loop blocking on timer signal
 while True:
