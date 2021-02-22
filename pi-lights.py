@@ -23,7 +23,7 @@ import sys
 import os
 
 # Constants
-VERSION = 0.21
+VERSION = 0.23
 ON = True
 OFF = False
 SECONDS_PER_MINUTE = 60.0
@@ -178,13 +178,18 @@ class Timer:
         self.lights_out_hour = hour
         self.lights_out_minute = minute
         logging.info('Lights out time changed to: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
-        # If lights are currently on, update an alarm for lights out
-        if self.state.bulb_state == ON:
-            signal.alarm(0)  # cancel any existing alarm
-            signal.signal(signal.SIGALRM, self.lights_off)
-            logging.info('Updating lights out time: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-            seconds = round(get_lights_out_time() - datetime.now()).total_seconds()
-            signal.alarm(seconds)
+
+        # If alarm signal is currently waiting to turn off lights, make adjustments
+        if signal.getsignal(signal.SIGALRM) == self.lights_off:
+            # if new off time will not come around until after next on time, just turn off lights now
+            # (ie. off time was updated to a time earlier than now)
+            if self.get_lights_out_time() > self.get_dusk_time():
+                logging.info('New lights out time has passed... turning off lights now...')
+                signal.alarm(1)
+            else: # otherwise update signal to turn off lights at new time
+                seconds = round((self.get_lights_out_time() - datetime.now()).total_seconds())
+                signal.alarm(seconds)
+                logging.info('Adjusting lights out time for today: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
 
     def get_lights_out_time(self):
         ''' Get next lights out time
