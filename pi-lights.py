@@ -23,7 +23,7 @@ import sys
 import os
 
 # Constants
-VERSION = 0.1
+VERSION = 0.21
 ON = True
 OFF = False
 SECONDS_PER_MINUTE = 60.0
@@ -131,60 +131,72 @@ class Timer:
         '''
         self.state = state
         self.city = city
-        self.dusk_time = self.get_dusk_time()
-        logging.info('Light on time (dusk): {} for {}'.format(self.dusk_time.strftime("%H:%M"),self.city))
-
-        # Initialize light on/off times
         self.lights_out_hour = lights_out_time.hour
         self.lights_out_minute = lights_out_time.minute
-        logging.info('Lights out time: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
-
-    def handler(self, signum, frame):
-        ''' Signal handler that runs every minute 
+    
+    def lights_on(self, signum, frame):
+        ''' Signal handler that turns lights on
         '''
         current_time = datetime.now()
-        logging.debug('Signal handler called with signal {} at {}'.format(signum,current_time))
+        logging.info('*** Turning lights ON at {} ***'.format(current_time.strftime("%m/%d/%Y %H:%M")))
+        self.state.turn_on_lights()
 
-        # Reset dusk time at the beginning of each new day
-        if current_time.hour == 0 and current_time.minute == 0:
-            self.dusk_time = self.get_dusk_time()
-            logging.info('Dusk time for today: {}'.format(self.dusk_time.strftime("%H:%M")))
-            logging.info('Lights out time: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
+        # If outlet is enabled then turn it on as well
+        if self.state.outlet_enable:
+            logging.info('*** Turning outlet ON at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+            self.state.turn_on_outlet()
 
-        # Check if it's time for light(s) to come on
-        if current_time.hour == self.dusk_time.hour and current_time.minute == self.dusk_time.minute:
-            logging.info('*** Turning lights ON for the evening at {} ***'.format(current_time))
-            self.state.turn_on_lights()
+        # set next lights off time
+        signal.signal(signal.SIGALRM, self.lights_off)
+        logging.info('Next event = Lights OUT at: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+        seconds = round(get_lights_out_time() - datetime.now()).total_seconds()
+        signal.alarm(seconds)
 
-            # If outlet is enabled then turn it on as well
-            if self.state.outlet_enable:
-                logging.info('*** Turning outlet ON for the evening at {} ***'.format(current_time))
-                self.state.turn_on_outlet()
+    def lights_off(self, signum, frame):
+        ''' Signal handler that turns lights off
+        '''
+        current_time = datetime.now()
+        logging.info('*** Turning lights OFF at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+        self.state.turn_off_lights()
 
-        # Check for lights out
-        elif current_time.hour == self.lights_out_hour and current_time.minute == self.lights_out_minute:
-            logging.info('*** Turning lights OFF at {} ***'.format(current_time))
-            self.state.turn_off_lights()
+        # If outlet mode is enabled then turn it off as well
+        if self.state.outlet_enable:
+            logging.info('*** Turning outlet off at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+            self.state.turn_off_outlet()       
 
-            # If outlet mode is enabled then turn it off as well
-            if self.state.outlet_enable:
-                logging.info('*** Turning outlet off at {} ***'.format(current_time))
-                self.state.turn_off_outlet()
+        # set next lights on time
+        signal.signal(signal.SIGALRM, self.lights_on)
+        dusk_time = self.get_dusk_time()
+        logging.info('Next event = Lights ON at: {} (dusk time)'.format(dusk_time.strftime("%m/%d/%Y, %H:%M:%S")))
+        seconds = round((dusk_time - datetime.now()).total_seconds())
+        signal.alarm(seconds)
 
     def set_lights_out_time(self, hour, minute):
         ''' Set lights out time
         '''
+        # Update new lights out time
         self.lights_out_hour = hour
         self.lights_out_minute = minute
         logging.info('Lights out time changed to: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
+        # If lights are currently on, update an alarm for lights out
+        if self.state.bulb_state == ON:
+            signal.alarm(0)  # cancel any existing alarm
+            signal.signal(signal.SIGALRM, self.lights_off)
+            logging.info('Updating lights out time: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+            seconds = round(get_lights_out_time() - datetime.now()).total_seconds()
+            signal.alarm(seconds)
 
     def get_lights_out_time(self):
-        ''' Get lights out time
+        ''' Get next lights out time
         '''
-        return datetime.now().replace(hour=self.lights_out_hour, minute=self.lights_out_minute)
+        lights_out_time = datetime.now().replace(hour=self.lights_out_hour, minute=self.lights_out_minute, second=0)
+        # If lights out time has already passed for today, return lights out time for tomorrow
+        if lights_out_time < datetime.now():
+            lights_out_time += timedelta(days=1)
+        return lights_out_time
 
     def get_dusk_time(self):
-        ''' Determine dusk time today for local city using astral library
+        ''' Determine next dusk time for local city using astral library
         '''
         try:
             city = lookup(self.city, database())
@@ -192,9 +204,12 @@ class Timer:
             logging.error('Unrecognized city {}, using default dusk time.'.format(self.city))
             return datetime.today().replace(hour=17, minute=0)
         # Compute dusk time for today corresponding to a solar depression angle of 6 degrees
-        s = sun(city.observer,tzinfo=city.timezone)
+        s = sun(city.observer, tzinfo=city.timezone)
         dusk = s['dusk']
-        dusk = dusk.replace(tzinfo=None)
+        dusk = dusk.replace(tzinfo=None)  # remove time zone to be compatible with datetime
+        # If dusk time has already passed for today, return dusk time for tomorrow
+        if dusk < datetime.now():
+            dusk += timedelta(days=1)
         return dusk
 
 class FlaskThread(Thread):
@@ -220,7 +235,7 @@ class FlaskThread(Thread):
         ''' Returns index.html webpage, methods=['GET', 'POST']
         '''
         # Sync web messages with current state
-        status_msg = 'Timer On-time (dusk time): {}<br>Auto Off-time: {}'.format(timer.dusk_time.strftime("%H:%M"), timer.get_lights_out_time().strftime("%H:%M"))
+        status_msg = 'Timer On-time (dusk time): {}<br>Auto Off-time: {}'.format(self.timer.get_dusk_time().strftime("%H:%M"), self.timer.get_lights_out_time().strftime("%H:%M"))
 
         # Process POST actions if requested
         if request.method == 'POST':
@@ -322,38 +337,63 @@ else:
     logging.basicConfig(filename=LOG_FILE, level=logging.INFO, filemode='w')
 
 # Start log file
-logging.info('Starting at {} with version'.format(datetime.now(),VERSION))
+logging.info('Starting at: {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+logging.info('Software version: {}'.format(VERSION))
 logging.info('Gateway address: {}'.format(GATEWAY_IP))
 
 # Check configuration settings
 if len(SECURITY_KEY) != 16:
     logging.error("Invalid security key length in configuration file.")
+
 if not (1 <= DIMMER_SETTING <=255):
     logging.error("Invalid dimmer setting in configuration file: {}".format(DIMMER_SETTING))
 else:
     logging.info('Dimmer settting: {}'.format(DIMMER_SETTING))
+
 try:
     lookup(CITY, database())
 except KeyError:
     logging.error('Unrecognized city in configuration file: {}'.format(CITY))
+
 if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.split(':')[0]) < 24) and (0 <= int(OFF_TIME.split(':')[1])<60)):
     logging.error('Invalid off_time in configuration file {} - using default off time 23:00'.format(OFF_TIME))
-    OFF_TIME = '23:00'
-
-# Set default timer off-time from configuration file
-lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
-logging.info('Timer off-time set to: {}'.format(lights_out_time))
+    OFF_TIME = "23:00"
 
 # setup a sigint handler
 signal.signal(signal.SIGINT, sigint_handler)
 
-# Create an object to track and control state of all lights and outlet
+# Create an object to control state of all lights and outlet
 state = State(DIMMER_SETTING)
 
-# Create an interval timer object
+# Set default lights off time for today
+lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
+logging.info('Default lights OFF time set to: {}'.format(lights_out_time.strftime("%H:%M")))
+
+# Create a timer object
 timer = Timer(state, CITY, lights_out_time)
 
-# Start flask web server in a thread if enabled in config file
+# Get the lights on time for today
+lights_on_time = timer.get_dusk_time()
+today = datetime.now().date()
+lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
+logging.info('Lights ON time for today: {}'.format(lights_on_time.strftime("%m/%d/%Y, %H:%M:%S")))
+
+# If current time is between lights ON and OFF time then 
+# turn lights ON and set SIGALARM to turn lights OFF
+if lights_on_time <= datetime.now() < lights_out_time:
+    state.turn_on_lights()
+    signal.signal(signal.SIGALRM, timer.lights_off)
+    seconds = round((timer.get_lights_out_time() - datetime.now()).total_seconds())
+    signal.alarm(seconds)
+    logging.info('Turning lights ON and initializing SIGALARM to turn lights OFF at: {}'.format(timer.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+# Otherwise set SIGALARM to turn lights ON at next dusk time
+else:
+    signal.signal(signal.SIGALRM, timer.lights_on)
+    seconds = round((timer.get_dusk_time() - datetime.now()).total_seconds())
+    signal.alarm(seconds)
+    logging.info('Initializing SIGALARM to turn lights ON at: {}'.format(timer.get_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")))
+
+# If enabled, start flask web server in a thread
 if WEB_INTERFACE:
     logging.info('Web interface ENABLED')
     server = FlaskThread(PORT,state,timer,LOG_FILE)
@@ -361,18 +401,6 @@ if WEB_INTERFACE:
 else:
     logging.info('Web interface DISABLED')
 
-# Since this is not a real-time operating system, there will be timing jitter.
-# Set ticks to occur in the middle of each minute (when seconds=30)
-# to avoid any potential issues with jitter at the boundary of a change in minutes
-current_time = datetime.now()
-current_time = current_time.replace(second=30, microsecond=0)
-start_time = current_time + timedelta(seconds=SECONDS_PER_MINUTE)
-
-# Setup signal to call handler every minute on the 30 seconds
-logging.info('Timer handler will start at {}'.format(start_time.strftime("%H:%M:%S")))
-signal.signal(signal.SIGALRM, timer.handler)
-signal.setitimer(signal.ITIMER_REAL, start_time.timestamp()-time(), SECONDS_PER_MINUTE)
-
-# Continuously loop blocking on timer signal
+# Continuously loop blocking on alarm signal
 while True:
-    signal.pause()      # block until periodic timer fires, then repeat
+    signal.pause()      # block until signal fires, then repeat
