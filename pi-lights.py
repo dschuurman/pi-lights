@@ -23,7 +23,7 @@ import sys
 import os
 
 # Constants
-VERSION = 0.23
+VERSION = 0.24
 ON = True
 OFF = False
 SECONDS_PER_MINUTE = 60.0
@@ -71,7 +71,7 @@ class State:
         self.outlet_enable_msg = 'OFF'
 
     def turn_on_lights(self):
-        ''' Method to turn ON all bulb(s)
+        ''' Method to turn on all bulb(s)
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
@@ -85,7 +85,7 @@ class State:
         logging.debug('Lights turned on')
 
     def turn_off_lights(self):
-        ''' Method to turn OFF all bulb(s)
+        ''' Method to turn off all bulb(s)
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
@@ -97,7 +97,7 @@ class State:
         logging.debug('Lights turned off')
 
     def turn_on_outlet(self):
-        ''' Method to turn ON outlet
+        ''' Method to turn on outlet
         '''
         self.lock.acquire()
         self.api(self.outlet.socket_control.set_state(True))
@@ -108,7 +108,7 @@ class State:
         logging.debug('Outlet turned on')
 
     def turn_off_outlet(self):
-        ''' Method to turn OFF outlet
+        ''' Method to turn off outlet
         '''
         self.lock.acquire()
         self.api(self.outlet.socket_control.set_state(False))
@@ -137,31 +137,29 @@ class Timer:
     def lights_on(self, signum, frame):
         ''' Signal handler that turns lights on
         '''
-        current_time = datetime.now()
-        logging.info('*** Turning lights ON at {} ***'.format(current_time.strftime("%m/%d/%Y %H:%M")))
+        logging.info('*** Turning lights ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y %H:%M")))
         self.state.turn_on_lights()
 
         # If outlet is enabled then turn it on as well
         if self.state.outlet_enable:
-            logging.info('*** Turning outlet ON at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+            logging.info('*** Turning outlet ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             self.state.turn_on_outlet()
 
         # set next lights off time
         signal.signal(signal.SIGALRM, self.lights_off)
-        logging.info('Next event = Lights OUT at: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-        seconds = round(get_lights_out_time() - datetime.now()).total_seconds()
+        logging.info('Next event = Lights OFF at: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+        seconds = round((get_lights_out_time() - datetime.now()).total_seconds())
         signal.alarm(seconds)
 
     def lights_off(self, signum, frame):
         ''' Signal handler that turns lights off
         '''
-        current_time = datetime.now()
-        logging.info('*** Turning lights OFF at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+        logging.info('*** Turning lights OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
         self.state.turn_off_lights()
 
         # If outlet mode is enabled then turn it off as well
         if self.state.outlet_enable:
-            logging.info('*** Turning outlet off at {} ***'.format(current_time.strftime("%m/%d/%Y, %H:%M:%S")))
+            logging.info('*** Turning outlet OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             self.state.turn_off_outlet()       
 
         # set next lights on time
@@ -316,7 +314,7 @@ def sigint_handler(signum, frame):
 conf = configparser.ConfigParser()
 conf.read(os.path.join(os.path.abspath(os.path.dirname(__file__)),'pi-lights.conf'))
 
-# Configuration settings that are mandatory
+# Configuration settings that are required
 try:
     GATEWAY_IP = conf.get('pi-lights', 'gateway_ip')
     SECURITY_KEY = conf.get('pi-lights', 'security_key')
