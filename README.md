@@ -9,9 +9,10 @@ lights and a smart socket.
 
 ## Dependencies
 
-This project uses Python 3 and relies heavily on the [pytradfri](https://github.com/home-assistant-libs/pytradfri) package. 
-Other dependencies include astral, configparser, and flask.
-These packages can all be installed from the command line as follows:
+This project was developed on the [Raspberry Pi OS Lite](https://www.raspberrypi.org/software/operating-systems/) platform
+and written in Python 3. The code relies heavily on the [pytradfri](https://github.com/home-assistant-libs/pytradfri) 
+package as well as astral, configparser, and flask.
+These dependencies can all be installed from the command line as follows:
 ```
 $ pip3 install pytradfri astral configparser flask
 ```
@@ -28,11 +29,11 @@ To setup and configure the Tradfri gateway for Python, see the installation inst
 Once the gateway is configured, place the program and the configuration file `pi-lights.conf`
 in the same folder. Adjust the settings in `pi-lights.conf` to reflect your local settings.
 
-The program can be launched at boot time, but should only be started *after* the network is up and running.
-One way to esure this is to launch the program as a systemd service which is configured to wait for 
+The program can be launched at boot time, but should be started only *after* the network is up and running.
+One way to ensure this is to launch the program as a systemd service which is configured to wait for 
 the network to come online.
 
-## Imortant Security Notes
+## Imortant Security Note
 
 This program currently uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
 convenient web interface for status and control. Note that this code uses Flask’s built-in development server which is 
