@@ -23,7 +23,7 @@ import sys
 import os
 
 # Constants
-VERSION = 0.24
+VERSION = 0.25
 ON = True
 OFF = False
 SECONDS_PER_MINUTE = 60.0
@@ -137,7 +137,7 @@ class Timer:
     def lights_on(self, signum, frame):
         ''' Signal handler that turns lights on
         '''
-        logging.info('*** Turning lights ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y %H:%M")))
+        logging.info('*** Turning lights ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y %H:%M:%S")))
         self.state.turn_on_lights()
 
         # If outlet is enabled then turn it on as well
@@ -147,8 +147,8 @@ class Timer:
 
         # set next lights off time
         signal.signal(signal.SIGALRM, self.lights_off)
-        logging.info('Next event = Lights OFF at: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-        seconds = round((get_lights_out_time() - datetime.now()).total_seconds())
+        logging.info('Next event = Lights OFF at: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+        seconds = round((get_next_lights_out_time() - datetime.now()).total_seconds())
         signal.alarm(seconds)
 
     def lights_off(self, signum, frame):
@@ -164,7 +164,7 @@ class Timer:
 
         # set next lights on time
         signal.signal(signal.SIGALRM, self.lights_on)
-        dusk_time = self.get_dusk_time()
+        dusk_time = self.get_next_dusk_time()
         logging.info('Next event = Lights ON at: {} (dusk time)'.format(dusk_time.strftime("%m/%d/%Y, %H:%M:%S")))
         seconds = round((dusk_time - datetime.now()).total_seconds())
         signal.alarm(seconds)
@@ -181,15 +181,15 @@ class Timer:
         if signal.getsignal(signal.SIGALRM) == self.lights_off:
             # if new off time will not come around until after next on time, just turn off lights now
             # (ie. off time was updated to a time earlier than now)
-            if self.get_lights_out_time() > self.get_dusk_time():
+            if self.get_next_lights_out_time() > self.get_next_dusk_time():
                 logging.info('New lights out time has passed... turning off lights now...')
                 signal.alarm(1)
             else: # otherwise update signal to turn off lights at new time
-                seconds = round((self.get_lights_out_time() - datetime.now()).total_seconds())
+                seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
                 signal.alarm(seconds)
-                logging.info('Adjusting lights out time for today: {}'.format(self.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info('Adjusting lights out time for today: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
 
-    def get_lights_out_time(self):
+    def get_next_lights_out_time(self):
         ''' Get next lights out time
         '''
         lights_out_time = datetime.now().replace(hour=self.lights_out_hour, minute=self.lights_out_minute, second=0)
@@ -198,7 +198,7 @@ class Timer:
             lights_out_time += timedelta(days=1)
         return lights_out_time
 
-    def get_dusk_time(self):
+    def get_next_dusk_time(self):
         ''' Determine next dusk time for local city using astral library
         '''
         try:
@@ -210,9 +210,11 @@ class Timer:
         s = sun(city.observer, tzinfo=city.timezone)
         dusk = s['dusk']
         dusk = dusk.replace(tzinfo=None)  # remove time zone to be compatible with datetime
-        # If dusk time has already passed for today, return dusk time for tomorrow
+        # If dusk time has already passed for today, return next dusk time for tomorrow
         if dusk < datetime.now():
-            dusk += timedelta(days=1)
+            s = sun(city.observer, tzinfo=city.timezone, date=date.today()+timedelta(days=1))
+            dusk = s['dusk']
+            dusk = dusk.replace(tzinfo=None)
         return dusk
 
 class FlaskThread(Thread):
@@ -238,7 +240,7 @@ class FlaskThread(Thread):
         ''' Returns index.html webpage, methods=['GET', 'POST']
         '''
         # Sync web messages with current state
-        status_msg = 'Timer On-time (dusk time): {}<br>Auto Off-time: {}'.format(self.timer.get_dusk_time().strftime("%H:%M"), self.timer.get_lights_out_time().strftime("%H:%M"))
+        status_msg = 'Timer On-time (dusk time): {}<br>Auto Off-time: {}'.format(self.timer.get_next_dusk_time().strftime("%H:%M"), self.timer.get_next_lights_out_time().strftime("%H:%M"))
 
         # Process POST actions if requested
         if request.method == 'POST':
@@ -258,12 +260,12 @@ class FlaskThread(Thread):
                 self.state.turn_off_outlet()
             elif form_dict.get('outlet_enable', None) == 'on':
                 # Enable outlet
-                logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now()))
+                logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
                 self.state.outlet_enable = True
                 self.state.outlet_enable_msg = 'ON'
             elif form_dict.get('outlet_enable', None) == 'off':
                 # Disable outlet
-                logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now()))
+                logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
                 self.state.outlet_enable = False
                 self.state.outlet_enable_msg = 'OFF'
 
@@ -302,8 +304,8 @@ class FlaskThread(Thread):
 def sigint_handler(signum, frame):
     ''' SIGINT signal handler to quit gracefully
     '''
-    # Cancel interval timer
-    signal.setitimer(signal.ITIMER_REAL, 0, 0.0)
+    # Cancel alarm timer
+    signal.alarm(0)
     logging.info('Program recevied SIGINT at: {}'.format(datetime.now()))
     logging.shutdown()
     os._exit(0)
@@ -376,25 +378,24 @@ logging.info('Default lights OFF time set to: {}'.format(lights_out_time.strftim
 timer = Timer(state, CITY, lights_out_time)
 
 # Get the lights on time for today
-lights_on_time = timer.get_dusk_time()
+lights_on_time = timer.get_next_dusk_time()
 today = datetime.now().date()
 lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
-logging.info('Lights ON time for today: {}'.format(lights_on_time.strftime("%m/%d/%Y, %H:%M:%S")))
 
 # If current time is between lights ON and OFF time then 
 # turn lights ON and set SIGALARM to turn lights OFF
 if lights_on_time <= datetime.now() < lights_out_time:
     state.turn_on_lights()
     signal.signal(signal.SIGALRM, timer.lights_off)
-    seconds = round((timer.get_lights_out_time() - datetime.now()).total_seconds())
+    seconds = round((timer.get_next_lights_out_time() - datetime.now()).total_seconds())
     signal.alarm(seconds)
-    logging.info('Turning lights ON and initializing SIGALARM to turn lights OFF at: {}'.format(timer.get_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+    logging.info('Turning lights ON and initializing SIGALARM to turn lights OFF at: {}'.format(timer.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
 # Otherwise set SIGALARM to turn lights ON at next dusk time
 else:
     signal.signal(signal.SIGALRM, timer.lights_on)
-    seconds = round((timer.get_dusk_time() - datetime.now()).total_seconds())
+    seconds = round((timer.get_next_dusk_time() - datetime.now()).total_seconds())
     signal.alarm(seconds)
-    logging.info('Initializing SIGALARM to turn lights ON at: {}'.format(timer.get_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")))
+    logging.info('Initializing SIGALARM to turn lights ON at: {}'.format(timer.get_next_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")))
 
 # If enabled, start flask web server in a thread
 if WEB_INTERFACE:
