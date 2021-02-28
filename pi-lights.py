@@ -23,11 +23,11 @@ import sys
 import os
 
 # Constants
-VERSION = 0.25
+VERSION = 0.26
 ON = True
 OFF = False
 SECONDS_PER_MINUTE = 60.0
-MESSAGE_DELAY = 0.25             # time delay between messages sent to the gateway
+MESSAGE_DELAY = 0.5             # time delay between messages sent to the gateway
 
 #### Class definitions ####
 
@@ -148,7 +148,7 @@ class Timer:
         # set next lights off time
         signal.signal(signal.SIGALRM, self.lights_off)
         logging.info('Next event = Lights OFF at: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-        seconds = round((get_next_lights_out_time() - datetime.now()).total_seconds())
+        seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
         signal.alarm(seconds)
 
     def lights_off(self, signum, frame):
@@ -177,17 +177,24 @@ class Timer:
         self.lights_out_minute = minute
         logging.info('Lights out time changed to: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
 
-        # If alarm signal is currently waiting to turn off lights, make adjustments
+        # The following logic determines the implications of the new off time
+        # for the current state of the light and updates the alarm time as needed
+
+        # If alarm signal is waiting to turn off lights, then lights are currently on
         if signal.getsignal(signal.SIGALRM) == self.lights_off:
-            # if new off time will not come around until after next on time, just turn off lights now
+            # if new off time is after next on time, then lights should go off now
             # (ie. off time was updated to a time earlier than now)
             if self.get_next_lights_out_time() > self.get_next_dusk_time():
                 logging.info('New lights out time has passed... turning off lights now...')
                 signal.alarm(1)
-            else: # otherwise update signal to turn off lights at new time
+            else:                   # otherwise update alarm time to turn off lights at new off time
                 seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
                 signal.alarm(seconds)
                 logging.info('Adjusting lights out time for today: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+        # otherwise lights are currently off so check current time relative to new off time
+        elif (datetime.now() < self.get_next_lights_out_time() < self.get_next_dusk_time()):
+                logging.info('New light off time implies lights should be on now...')
+                signal.alarm(1)     # If current time falls within new on time, update alarm to turn lights on now
 
     def get_next_lights_out_time(self):
         ''' Get next lights out time
@@ -249,25 +256,29 @@ class FlaskThread(Thread):
             if form_dict.get('bulb', None) == 'on':
                 # turn bulbs on
                 self.state.turn_on_lights()
+                logging.info('Lights turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('bulb', None) == 'off':
                 # turn bulbs off
                 self.state.turn_off_lights()
+                logging.info('Lights turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet', None) == 'on':
                 # Turn outlet on
                 self.state.turn_on_outlet()
+                logging.info('Outlet turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet', None) == 'off':
                 # Turn outlet off
                 self.state.turn_off_outlet()
+                logging.info('Outlet turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet_enable', None) == 'on':
                 # Enable outlet
-                logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
                 self.state.outlet_enable = True
                 self.state.outlet_enable_msg = 'ON'
+                logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet_enable', None) == 'off':
                 # Disable outlet
-                logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
                 self.state.outlet_enable = False
                 self.state.outlet_enable_msg = 'OFF'
+                logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
 
             # Return success (201) and stay on the same page
             return render_template('index.html', status_msg=status_msg, outlet_msg=self.state.outlet_msg, bulb_msg=self.state.bulb_msg, outlet_enable_msg=self.state.outlet_enable_msg), 200
