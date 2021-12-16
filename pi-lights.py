@@ -26,7 +26,6 @@ import os
 VERSION = 0.26
 ON = True
 OFF = False
-SECONDS_PER_MINUTE = 60.0
 MESSAGE_DELAY = 0.5             # time delay between messages sent to the gateway
 
 #### Class definitions ####
@@ -124,7 +123,7 @@ class State:
         self.api_factory.shutdown()
 
 class Timer:
-    ''' Timer class used to control periodic actions with one tick per minute
+    ''' Timer class used to control periodic actions
     '''
     def __init__(self, state, city, lights_out_time):
         ''' Constructor 
