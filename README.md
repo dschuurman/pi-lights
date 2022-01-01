@@ -187,9 +187,10 @@ MQTT messages. The dependencies for `pi-lights` can all be installed from the co
 $ pip3 install paho-mqtt astral configparser flask
 ```
 The `pi-lights` program and the `pi-lights.conf` configuration file should be placed in the same folder.
-By default, a `pi-lights.log` file will also be written in the same folder.
-Edit the configuration file to reflect your local settings (in particular, set your city so that
-the dusk time can be properly computed).
+The `templates` folder should also be placed in this folder since it is required for the web interface.
+By default, a log file named `pi-lights.log` will be written in the same folder where the program resides
+(but this can be set elsewhere in the configuration file). The configuration file should be edited to 
+reflect your local settings (in particular, set your city so that the dusk time can be properly computed).
 
 The `pi-lights` program can be launched at boot time, but should be started only *after* the network is up and running.
 One way to ensure this is to launch the program as a systemd service which is configured to wait for the network to come online 
