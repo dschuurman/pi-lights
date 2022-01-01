@@ -180,18 +180,20 @@ messages](https://www.zigbee2mqtt.io/guide/usage/mqtt_topics_and_messages.html).
 Once Zigbee2MQTT is installed and devices are successfully paired we can setup the
 `pi-lights` control program. This program controls devices by sending MQTT messages
 to the MQTT broker which are then bridged to the Zigbee network by Zignee2MQTT.
-The control program is written in Python 3 and uses the paho-mqtt library to send
+The control program is written in Python 3 and uses the 
+[paho-mqtt](https://www.eclipse.org/paho/index.php?page=clients/python/index.php) library to send
 MQTT messages. The dependencies for `pi-lights` can all be installed from the command-line as follows:
 ```
 $ pip3 install paho-mqtt astral configparser flask
 ```
-Next, place the program and the `pi-lights.conf` configuration file in the same folder
-as the program and edit the configuration file to reflect your local settings.
+The `pi-lights` program and the `pi-lights.conf` configuration file should be placed in the same folder.
+By default, a `pi-lights.log` file will also be written in the same folder.
+Edit the configuration file to reflect your local settings (in particular, set your city so that
+the dusk time can be properly computed).
 
 The `pi-lights` program can be launched at boot time, but should be started only *after* the network is up and running.
-One way to ensure this is to launch the program as a systemd service which is configured to wait for 
-the network to come online ([see the example of of using systemd with Zigbee2MQTT](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#starting-zigbee2mqtt)).
-
+One way to ensure this is to launch the program as a systemd service which is configured to wait for the network to come online 
+([see the example of of using systemd with Zigbee2MQTT](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#optional-running-as-a-daemon-with-systemctl)).
 
 This program uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
 convenient web interface for status and control. The web page is run on port 8080 by default (hence the
