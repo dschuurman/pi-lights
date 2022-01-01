@@ -1,4 +1,4 @@
-# Home Automation script for Tradfri intelligent lights and socket to run on Raspberry Pi
+# Home Automation script for Zigbee lights and sockets to run on Raspberry Pi
 # (C) 2020 Derek Schuurman
 # License: GNU General Public License (GPL) v3
 # This program is distributed in the hope that it will be useful,
@@ -6,124 +6,111 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-import sys
+import sys, os
+import paho.mqtt.client as mqtt
 import logging
 from time import time, sleep
-import configparser
+import configparser, json
 from datetime import date, datetime, timezone, timedelta
 from astral.sun import sun
 from astral.geocoder import lookup, database
-from pytradfri import Gateway
-from pytradfri.api.libcoap_api import APIFactory
-from pytradfri.error import PytradfriError
 from threading import Thread, Lock
 from flask import Flask, render_template, request
 import signal
-import sys
-import os
 
 # Constants
-VERSION = 0.26
+VERSION = 1.0
 ON = True
 OFF = False
-MESSAGE_DELAY = 0.5             # time delay between messages sent to the gateway
+MQTT_KEEPALIVE = 60
 
 #### Class definitions ####
 
 class State:
-    ''' class to store device state for lights and an outlet
+    ''' class to manage device state for lights and outlets
     '''
-    def __init__(self, dimmer_setting):
-        ''' Constructor: connect to Tradfri gateway and devices
+    def __init__(self, bulbs, outlets, dimmer_setting, client):
+        ''' Constructor: connect to MQTT broker and initialize state variables
         '''
-        self.api_factory = APIFactory(host=GATEWAY_IP, psk=SECURITY_KEY, psk_id=SECURITY_ID)
-        self.api = self.api_factory.request
-        gateway = Gateway()
-        devices_command = gateway.get_devices()
-        devices_commands = self.api(devices_command)
-        devices = self.api(devices_commands)
-
-        # Discover devices
-        # Assume multiple smart bulbs and one smart outlet
-        self.bulbs = []
-        logging.info('Devices found: {}'.format(devices))
-        for dev in devices:
-            if dev.has_light_control:
-                self.bulbs.append(dev)
-            elif dev.has_socket_control:
-                self.outlet = dev
-            else:
-                self.switch = dev
-
-        # Initialize dimmer setting
+        self.client = client
+ 
+        # Store bulbs, outlets, and dimmer settings
+        self.bulbs = bulbs
+        self.outlets = outlets
         self.dimmer_setting = dimmer_setting
-
+        logging.info('Devices: {},{}'.format(bulbs, outlets))
+       
         # Use a mutex for thread synchronization
         self.lock = Lock()
 
         # Turn off everything to start
         self.turn_off_lights()
-        self.turn_off_outlet()
+        self.turn_off_outlets()
 
         # Initialize outlet to be disabled
         self.outlet_enable = False
         self.outlet_enable_msg = 'OFF'
 
     def turn_on_lights(self):
-        ''' Method to turn on all bulb(s)
+        ''' Method to turn on all bulbs and set dimmer setting
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
-            self.api(bulb.light_control.set_dimmer(self.dimmer_setting))
-            sleep(MESSAGE_DELAY)
-            self.api(bulb.light_control.set_state(True))
-            sleep(MESSAGE_DELAY)            # Add a delay for transmission time
+            (rc1, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "ON")
+            (rc2, msg_id) = self.client.publish("zigbee2mqtt/{}/set/brightness".format(bulb), self.dimmer_setting)
+            if rc1 != 0 or rc2 != 0:
+                logging.error('MQTT publish return codes: {},{}'.format(rc1,rc2))
         self.bulb_state = ON
         self.bulb_msg = 'ON'
         self.lock.release()
         logging.debug('Lights turned on')
 
     def turn_off_lights(self):
-        ''' Method to turn off all bulb(s)
+        ''' Method to turn off all bulbs
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
-            self.api(bulb.light_control.set_state(False))
-            sleep(MESSAGE_DELAY)            # Add a delay for transmission time
+            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "OFF")
+            if rc != 0:
+                logging.error('MQTT publish return code: {}'.format(rc))       
         self.bulb_state = OFF
         self.bulb_msg = 'OFF'
         self.lock.release()
         logging.debug('Lights turned off')
 
-    def turn_on_outlet(self):
-        ''' Method to turn on outlet
+    def turn_on_outlets(self):
+        ''' Method to turn on outlets
         '''
         self.lock.acquire()
-        self.api(self.outlet.socket_control.set_state(True))
-        sleep(MESSAGE_DELAY)            # Add a delay for transmission time
+        for outlet in self.outlets:
+            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "ON")
+            if rc != 0:
+                logging.error('MQTT publish return code: {}'.format(rc))
         self.outlet_state = ON
         self.outlet_msg = "ON"
         self.lock.release()
-        logging.debug('Outlet turned on')
+        logging.debug('Outlets turned on')
 
-    def turn_off_outlet(self):
-        ''' Method to turn off outlet
+    def turn_off_outlets(self):
+        ''' Method to turn off outlets
         '''
         self.lock.acquire()
-        self.api(self.outlet.socket_control.set_state(False))
-        sleep(MESSAGE_DELAY)            # Add a delay for transmission time
+        for outlet in self.outlets:
+            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "OFF")
+            if rc != 0:
+                logging.error('MQTT publish return code: {}'.format(rc))
         self.outlet_state = OFF
         self.outlet_msg = "OFF"
         self.lock.release()
-        logging.debug('Outlet turned off')
+        logging.debug('Outlets turned off')
 
     def disconnect(self):
-        ''' Graceful disconnect from gateway
+        ''' Graceful disconnect from MQTT broker
         '''
-        self.api_factory.shutdown()
+        self.client.disconnect()
 
 class Timer:
-    ''' Timer class used to control periodic actions
+    ''' Timer class used to control periodic events
     '''
     def __init__(self, state, city, lights_out_time):
         ''' Constructor 
@@ -139,10 +126,10 @@ class Timer:
         logging.info('*** Turning lights ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y %H:%M:%S")))
         self.state.turn_on_lights()
 
-        # If outlet is enabled then turn it on as well
+        # If outlets are enabled then turn them on as well
         if self.state.outlet_enable:
-            logging.info('*** Turning outlet ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            self.state.turn_on_outlet()
+            logging.info('*** Turning outlets ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+            self.state.turn_on_outlets()
 
         # set next lights off time
         signal.signal(signal.SIGALRM, self.lights_off)
@@ -156,10 +143,10 @@ class Timer:
         logging.info('*** Turning lights OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
         self.state.turn_off_lights()
 
-        # If outlet mode is enabled then turn it off as well
+        # If outlets are enabled then turn them off as well
         if self.state.outlet_enable:
-            logging.info('*** Turning outlet OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            self.state.turn_off_outlet()       
+            logging.info('*** Turning outlets OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+            self.state.turn_off_outlets()       
 
         # set next lights on time
         signal.signal(signal.SIGALRM, self.lights_on)
@@ -176,24 +163,24 @@ class Timer:
         self.lights_out_minute = minute
         logging.info('Lights out time changed to: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
 
-        # The following logic determines the implications of the new off time
+        # The following logic determines the implications of the new off-time
         # for the current state of the light and updates the alarm time as needed
 
         # If alarm signal is waiting to turn off lights, then lights are currently on
         if signal.getsignal(signal.SIGALRM) == self.lights_off:
-            # if new off time is after next on time, then lights should go off now
-            # (ie. off time was updated to a time earlier than now)
+            # if new off-time is after the next on-time, then lights should go off now
+            # (ie. off-time was updated to a time earlier than now)
             if self.get_next_lights_out_time() > self.get_next_dusk_time():
                 logging.info('New lights out time has passed... turning off lights now...')
                 signal.alarm(1)
-            else:                   # otherwise update alarm time to turn off lights at new off time
+            else:                   # otherwise update alarm time to turn off lights at new off-time
                 seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
                 signal.alarm(seconds)
                 logging.info('Adjusting lights out time for today: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-        # otherwise lights are currently off so check current time relative to new off time
+        # otherwise lights are currently off so check current time relative to new off-time
         elif (datetime.now() < self.get_next_lights_out_time() < self.get_next_dusk_time()):
                 logging.info('New light off time implies lights should be on now...')
-                signal.alarm(1)     # If current time falls within new on time, update alarm to turn lights on now
+                signal.alarm(1)     # If current time falls within new on-time, update alarm to turn lights on now
 
     def get_next_lights_out_time(self):
         ''' Get next lights out time
@@ -212,10 +199,10 @@ class Timer:
         except KeyError:         # Log error and return 5PM by default if city not found
             logging.error('Unrecognized city {}, using default dusk time.'.format(self.city))
             return datetime.today().replace(hour=17, minute=0)
-        # Compute dusk time for today corresponding to a solar depression angle of 6 degrees
+        # Compute dusk time for today (corresponding to a solar depression angle of 6 degrees)
         s = sun(city.observer, tzinfo=city.timezone)
         dusk = s['dusk']
-        dusk = dusk.replace(tzinfo=None)  # remove time zone to be compatible with datetime
+        dusk = dusk.replace(tzinfo=None)  # remove timezone to be compatible with datetime
         # If dusk time has already passed for today, return next dusk time for tomorrow
         if dusk < datetime.now():
             s = sun(city.observer, tzinfo=city.timezone, date=date.today()+timedelta(days=1))
@@ -224,7 +211,7 @@ class Timer:
         return dusk
 
 class FlaskThread(Thread):
-    ''' Class definition to run flask in a separate thread
+    ''' Class definition to run flask
     '''
     def __init__(self, port, state, timer, logfile):
         self.port = port
@@ -255,19 +242,19 @@ class FlaskThread(Thread):
             if form_dict.get('bulb', None) == 'on':
                 # turn bulbs on
                 self.state.turn_on_lights()
-                logging.info('Lights turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info('Light(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('bulb', None) == 'off':
                 # turn bulbs off
                 self.state.turn_off_lights()
-                logging.info('Lights turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info('Light(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet', None) == 'on':
                 # Turn outlet on
-                self.state.turn_on_outlet()
-                logging.info('Outlet turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                self.state.turn_on_outlets()
+                logging.info('Outlet(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet', None) == 'off':
                 # Turn outlet off
-                self.state.turn_off_outlet()
-                logging.info('Outlet turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                self.state.turn_off_outlets()
+                logging.info('Outlet(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('outlet_enable', None) == 'on':
                 # Enable outlet
                 self.state.outlet_enable = True
@@ -296,7 +283,7 @@ class FlaskThread(Thread):
         return render_template('log.html', log=log)
 
     def off_time(self):
-        ''' Returns /off-time webpage, methods=['POST']
+        ''' Returns /off-time webpage, method=['POST']
         '''
         time = request.form['off_time']
         if time == '':
@@ -322,19 +309,21 @@ def sigint_handler(signum, frame):
 
 # ------------- Main code -------------
 
-# Read other constants from configuration file (located in the same folder as the program)
+# Read settings from configuration file (located in the same folder as the program)
 conf = configparser.ConfigParser()
 conf.read(os.path.join(os.path.abspath(os.path.dirname(__file__)),'pi-lights.conf'))
 
 # Configuration settings that are required
 try:
-    GATEWAY_IP = conf.get('pi-lights', 'gateway_ip')
-    SECURITY_KEY = conf.get('pi-lights', 'security_key')
-    SECURITY_ID = conf.get('pi-lights', 'security_id')
+    BULBS = json.loads(conf.get('pi-lights', 'bulbs'))
+    OUTLETS = json.loads(conf.get('pi-lights', 'outlets'))
 except configparser.NoOptionError as e:
-    print('Missing parameter in configuration file: {}'.format(e))
+    print('Missing parameters in configuration file: {}'.format(e))
     sys.exit(os.EX_CONFIG)
+
 # Configuration settings with fallback values
+BROKER_IP = conf.get('pi-lights', 'broker_ip', fallback="127.0.0.1")
+BROKER_PORT = conf.getint('pi-lights', 'broker_port', fallback=1883)
 PORT = conf.getint('pi-lights', 'port',fallback=8080)
 DIMMER_SETTING = conf.getint('pi-lights', 'dimmer_setting',fallback=255)   # Dimmer setting out of 255
 CITY = conf.get('pi-lights', 'city',fallback='Detroit')
@@ -354,12 +343,8 @@ else:
 # Start log file
 logging.info('Starting at: {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
 logging.info('Software version: {}'.format(VERSION))
-logging.info('Gateway address: {}'.format(GATEWAY_IP))
 
 # Check configuration settings
-if len(SECURITY_KEY) != 16:
-    logging.error("Invalid security key length in configuration file.")
-
 if not (1 <= DIMMER_SETTING <=255):
     logging.error("Invalid dimmer setting in configuration file: {}".format(DIMMER_SETTING))
 else:
@@ -371,23 +356,27 @@ except KeyError:
     logging.error('Unrecognized city in configuration file: {}'.format(CITY))
 
 if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.split(':')[0]) < 24) and (0 <= int(OFF_TIME.split(':')[1])<60)):
-    logging.error('Invalid off_time in configuration file {} - using default off time 23:00'.format(OFF_TIME))
+    logging.error('Invalid off_time in conf file {} - using default off-time 23:00'.format(OFF_TIME))
     OFF_TIME = "23:00"
 
 # setup a sigint handler
 signal.signal(signal.SIGINT, sigint_handler)
 
-# Create an object to control state of all lights and outlet
-state = State(DIMMER_SETTING)
+# Connect to MQTT broker and create object to control state of all lights and outlets
+client = mqtt.Client()
+ret = client.connect(BROKER_IP, BROKER_PORT, MQTT_KEEPALIVE)
+if ret != 0:
+    logging.error('MQTT connect return code: {}'.format(ret))
+state = State(BULBS, OUTLETS, DIMMER_SETTING, client)
 
-# Set default lights off time for today
+# Set default lights off-time for today
 lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
 logging.info('Default lights OFF time set to: {}'.format(lights_out_time.strftime("%H:%M")))
 
 # Create a timer object
 timer = Timer(state, CITY, lights_out_time)
 
-# Get the lights on time for today
+# Get the lights on-time for today
 lights_on_time = timer.get_next_dusk_time()
 today = datetime.now().date()
 lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
@@ -407,7 +396,7 @@ else:
     signal.alarm(seconds)
     logging.info('Initializing SIGALARM to turn lights ON at: {}'.format(timer.get_next_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")))
 
-# If enabled, start flask web server in a thread
+# If web interface is enabled, start the flask web server in a thread
 if WEB_INTERFACE:
     logging.info('Web interface ENABLED')
     server = FlaskThread(PORT,state,timer,LOG_FILE)
@@ -415,6 +404,8 @@ if WEB_INTERFACE:
 else:
     logging.info('Web interface DISABLED')
 
-# Continuously loop blocking on alarm signal
-while True:
-    signal.pause()      # block until signal fires, then repeat
+try:
+    client.loop_forever()
+except KeyboardInterrupt:
+    client.disconnect()
+    logging.info('Exiting')

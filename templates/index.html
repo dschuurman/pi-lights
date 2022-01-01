@@ -1,5 +1,4 @@
 <html>
-
 <head>
     <title>Home Lights Automation</title>
     <!-- Make the webpage more responsive to mobile browswers -->
@@ -9,11 +8,12 @@
 <body>
     <h2>Home Lights Automation</h2>
     <p>
-        The following settings can be used to control or configure the operation of the lights and outlet.
+        The following settings can be used to control or configure the operation of one or more lights and outlets
+        as specified in the pi-lights.conf file.
     </p>
     <hr>
 
-    <h3>Lights and Outlet Status and Control</h3>
+    <h3>Lights and Outlets Status and Control</h3>
 
     <b>Lights</b>
     <br>Lights are: {{bulb_msg}}
@@ -36,7 +36,8 @@
     <hr>
     <h3>Timer Control</h3>
     <p>
-        The lights will be automatically turned on and off each day. The daily on-time is set to the dusk time and the off-time can be adjusted below.
+        The lights will be automatically turned on and off each day. 
+        The daily on-time is set to the dusk time and the off-time can be adjusted below.
         <br>The current settings are as follows:
         <br>{{status_msg|safe}}
     </p>
@@ -48,9 +49,10 @@
         </form>
     </p>
     <p>
-        <b>Timer Control of Outlet</b>
-        <br>An outlet may also be controlled by the timer <i>with</i> the lights.
-        <br>Currently timer control of the outlet is: {{outlet_enable_msg}}
+        <b>Timer Control of Outlet(s)</b>
+        <br>In addition to the lights, a group of one or more outlets may also be controlled by the timer.
+        This can be helpful to control inside lights while away on vacation.
+        <br>Currently the timer control of the outlet(s) is: {{outlet_enable_msg}}
         <br>
         <form action="" method="post">
             <button name="outlet_enable" type="submit" value="on">ENABLE</button>
@@ -63,5 +65,4 @@
     </p>
 
 </body>
-
 </html>
