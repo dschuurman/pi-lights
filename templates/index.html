@@ -1,68 +1,91 @@
 <html>
+
 <head>
-    <title>Home Lights Automation</title>
+    <title>Home Automation of Lights and Outlets</title>
     <!-- Make the webpage more responsive to mobile browswers -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        table, td {border: 1px solid black;}
+        td {padding: 10px; vertical-align: top;}
+    </style>
 </head>
 
 <body>
-    <h2>Home Lights Automation</h2>
+    <h1>Home Automation of Lights and Outlets</h1>
     <p>
         The following settings can be used to control or configure the operation of one or more lights and outlets
-        as specified in the pi-lights.conf file.
+        as specified in the pi-lights configuration file.
+        Note that the lights and outlets can also be manually turned on and off without this webpage by 
+        <a href="https://www.zigbee2mqtt.io/guide/usage/binding.html">binding</a> them to
+        a <a href="https://www.zigbee2mqtt.io/devices/E1743.html">compatible Zigbee switch</a>.
     </p>
-    <hr>
 
-    <h3>Lights and Outlets Status and Control</h3>
+    <table>
+        <tr><td>
+            <h2>Lights</h2>
+            This section provides control and setting for one or more smart lights.
+            <br>Currently lights are: <b>{{lights_msg}}</b>
+            <br>
+            <form action="" method="post">
+                <button name="lights" type="submit" value="on">Lights ON</button>
+                <button name="lights" type="submit" value="off">Lights OFF</button>
+            </form>
 
-    <b>Lights</b>
-    <br>Lights are: {{bulb_msg}}
-    <br>
-    <form action="" method="post">
-        <button name="bulb" type="submit" value="on">Lights ON</button>
-        <button name="bulb" type="submit" value="off">Lights OFF</button>
-    </form>
+            <b>Brightness setting for Lights</b>
+            <br>
+            <form action="" method=post>
+                <input type="range" id="brightness" name="brightness" value={{brightness}} min="0" max="254"
+                    step="1" oninput="document.getElementById('setting').innerHTML = this.value;">
+                <span id="setting">{{brightness}}</span>
+                <br><input type="submit" value="Set Brightness">
+            </form>
 
-    <br>
-    <b>Outlet</b>
-    <br>The outlet will typically be used to control a lamp.
-    <br>Outlet is: {{outlet_msg}}
-    <br>
-    <form action="" method="post">
-        <button name="outlet" type="submit" value="on">Outlet ON</button>
-        <button name="outlet" type="submit" value="off">Outlet OFF</button>
-    </form>
+            <b>Enable Timer Control of Lights</b>
+            <br>Currently the timer control of the lights is: <b>{{lights_enable_msg}}</b>
+            <form action="" method="post">
+                <button name="lights_enable" type="submit" value="on">ENABLE</button>
+                <button name="lights_enable" type="submit" value="off">DISABLE</button>
+            </form>
+        </td></tr>
+        <tr><td>
+            <h2>Outlets</h2>
+            This section provides control and setting for one or more smart outlets.
+            <br>Currently outlets are: <b>{{outlets_msg}}</b>
+            <br>
+            <form action="" method="post">
+                <button name="outlets" type="submit" value="on">Outlets ON</button>
+                <button name="outlets" type="submit" value="off">Outlets OFF</button>
+            </form>
 
-    <hr>
-    <h3>Timer Control</h3>
-    <p>
-        The lights will be automatically turned on and off each day. 
-        The daily on-time is set to the dusk time and the off-time can be adjusted below.
-        <br>The current settings are as follows:
-        <br>{{status_msg|safe}}
-    </p>
-    <p>
-        <form method="POST" action="/off-time">
-            Select a new timer off-time:
-            <br><input type="time" name="off_time">
-            <input type="submit" value="Set new time">
-        </form>
-    </p>
-    <p>
-        <b>Timer Control of Outlet(s)</b>
-        <br>In addition to the lights, a group of one or more outlets may also be controlled by the timer.
-        This can be helpful to control inside lights while away on vacation.
-        <br>Currently the timer control of the outlet(s) is: {{outlet_enable_msg}}
-        <br>
-        <form action="" method="post">
-            <button name="outlet_enable" type="submit" value="on">ENABLE</button>
-            <button name="outlet_enable" type="submit" value="off">DISABLE</button>
-        </form>
-    </p>
-    <hr>
+            <b>Enable Timer Control of Outlet(s)</b>
+            <br>The outlets may also be controlled by the timer.
+            <br>This can be helpful to control indoor lights while away on vacation.
+            <br>Currently the timer control of the outlet(s) is: <b>{{outlets_enable_msg}}</b>
+            <br>
+            <form action="" method="post">
+                <button name="outlets_enable" type="submit" value="on">ENABLE</button>
+                <button name="outlets_enable" type="submit" value="off">DISABLE</button>
+            </form>
+        </td></tr>
+        <tr><td>
+            <h2>Timer Setting</h2>
+            The lights will be automatically turned on and off each day.
+            The daily on-time is set to the dusk time and the off-time can be adjusted below.
+            <br>The current settings are as follows:
+            <br>{{timer_msg|safe}}
+            <p>
+            <form method="POST" action="/off-time">
+                Select a new timer off-time:
+                <br><input type="time" name="off_time">
+                <input type="submit" value="Set new time">
+            </form>
+            </p>
+        </td></tr>
+    </table>
     <p>
         View <a href="/log">log file</a>.
     </p>
 
 </body>
+
 </html>

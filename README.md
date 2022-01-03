@@ -2,6 +2,9 @@
 
 This project automates home lighting using using the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) 
 wireless protocol. The software automatically turns lights on at dusk and then turns them off at a preset time.
+The motivation for the project was to illuminate porch lights in the evening
+while ensuring they are not needlessly left on during the day. Furthermore, by including the option to
+controlling a smart outlet, it provides the functionality of a traditional light timer while away on vacation.
 
 This code was written for a Raspberry Pi using a Zigbee USB stick, but it could be run on other 
 POSIX compliant systems using a compatible Zigbee adapter.
