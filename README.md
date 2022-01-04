@@ -187,7 +187,7 @@ The control program is written in Python 3 and uses the
 [paho-mqtt](https://www.eclipse.org/paho/index.php?page=clients/python/index.php) library to send
 MQTT messages. The dependencies for `pi-lights` can all be installed from the command-line as follows:
 ```
-$ pip3 install paho-mqtt astral configparser flask
+$ pip3 install paho-mqtt astral configparser flask waitress
 ```
 The `pi-lights` program and the `pi-lights.conf` configuration file should be placed in the same folder.
 The `templates` folder should also be placed in this folder since it is required for the web interface.
@@ -200,13 +200,11 @@ One way to ensure this is to launch the program as a systemd service which is co
 ([see the example of of using systemd with Zigbee2MQTT](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#optional-running-as-a-daemon-with-systemctl)).
 
 This program uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
-convenient web interface for status and control. The web page is run on port 8080 by default (hence the
-Zigbee2MQTT web front end is configured to run on port 8081 to avoid a port conflict).
-
-> ***Note***
->
->Note that this code uses Flask’s built-in development server which is 
-[not designed to be particularly efficient, stable, or secure](https://flask.palletsprojects.com/en/master/server/).
-If you do use it, your host *must be running on a secure local network* since the flask web pages are open, unencrypted, 
-and not particularly secure. The web interface is convenient for testing and setup. However, due to concerns 
-described above, the `pi-lights.conf` file includes an option to easily enable or disable the web interface.
+convenient web interface for status and control. Flask’s built-in development WSGI server is 
+[not designed to be particularly efficient, stable, or secure](https://flask.palletsprojects.com/en/master/server/)
+so this project uses the [waitress](https://github.com/Pylons/waitress) WSGI instead.
+The web server runs on port 8080 by default (hence the Zigbee2MQTT web front end is 
+configured to run on port 8081 to avoid a port conflict).
+The `pi-lights.conf` configuration file includes an option to easily enable or disable the web interface.
+The web interface is convenient for testing and setup, but if it is enabled it should 
+be run on a secure local network since the web pages are open and unencrypted.

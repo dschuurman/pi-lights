@@ -15,6 +15,7 @@ from astral.sun import sun
 from astral.geocoder import lookup, database
 from threading import Thread, Lock
 from flask import Flask, render_template, request
+from waitress import serve
 import signal
 
 # Constants
@@ -238,7 +239,8 @@ class FlaskThread(Thread):
         self.app.add_url_rule('/', 'index', self.index, methods=['GET', 'POST'])
 
     def run(self):
-        self.app.run(host='0.0.0.0', port=self.port, debug=False, use_reloader=False)
+        # Start the waitress WSGI server on the specified port
+        serve(self.app, host='0.0.0.0', port=self.port)
 
     # Methods for each flask webpage route
     def index(self):
