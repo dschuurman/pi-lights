@@ -19,9 +19,7 @@ from waitress import serve
 import signal
 
 # Constants
-VERSION = 1.0
-ON = True
-OFF = False
+VERSION = 1.02
 MQTT_KEEPALIVE = 60
 
 #### Class definitions ####
@@ -48,12 +46,10 @@ class State:
         self.turn_off_outlets()
 
         # Initialize timer control of lights to be enabled (normally used for porch lights)
-        self.lights_enable = True
-        self.lights_enable_msg = 'ON'
+        self.light_timer = True
 
         # Initialize timer control of outlets to be disabled (normally used for vacation)
-        self.outlets_enable = False
-        self.outlets_enable_msg = 'OFF'
+        self.outlet_timer = False
 
     def turn_on_lights(self):
         ''' Method to turn on all bulbs
@@ -63,8 +59,7 @@ class State:
             (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "ON")
             if rc != 0:
                 logging.error('MQTT publish return codes: {},{}'.format(rc))
-        self.bulb_state = ON
-        self.lights_msg = 'ON'
+        self.light_state = True
         self.lock.release()
         logging.debug('Lights turned on')
 
@@ -76,8 +71,7 @@ class State:
             (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "OFF")
             if rc != 0:
                 logging.error('MQTT publish return code: {}'.format(rc))       
-        self.bulb_state = OFF
-        self.lights_msg = 'OFF'
+        self.light_state = False
         self.lock.release()
         logging.debug('Lights turned off')
 
@@ -89,8 +83,7 @@ class State:
             (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "ON")
             if rc != 0:
                 logging.error('MQTT publish return code: {}'.format(rc))
-        self.outlets_state = ON
-        self.outlets_msg = "ON"
+        self.outlet_state = True
         self.lock.release()
         logging.debug('Outlets turned on')
 
@@ -102,8 +95,7 @@ class State:
             (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "OFF")
             if rc != 0:
                 logging.error('MQTT publish return code: {}'.format(rc))
-        self.outlets_state = OFF
-        self.outlets_msg = "OFF"
+        self.outlet_state = False
         self.lock.release()
         logging.debug('Outlets turned off')
 
@@ -140,7 +132,7 @@ class Timer:
         self.state.turn_on_lights()
 
         # If outlets are enabled then turn them on as well
-        if self.state.outlets_enable:
+        if self.state.outlet_timer:
             logging.info('*** Turning outlets ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             self.state.turn_on_outlets()
 
@@ -157,7 +149,7 @@ class Timer:
         self.state.turn_off_lights()
 
         # If outlets are enabled then turn them off as well
-        if self.state.outlets_enable:
+        if self.state.outlet_timer:
             logging.info('*** Turning outlets OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             self.state.turn_off_outlets()       
 
@@ -246,58 +238,51 @@ class FlaskThread(Thread):
     def index(self):
         ''' Returns index.html webpage, methods=['GET', 'POST']
         '''
-        # Sync web messages with current state
-        timer_msg = 'Timer On-time (dusk time): {}<br>Auto Off-time: {}'.format(self.timer.get_next_dusk_time().strftime("%H:%M"), self.timer.get_next_lights_out_time().strftime("%H:%M"))
-
         # Process POST actions if requested
         if request.method == 'POST':
             # Get form post as a dictionary
             form_dict = request.form
-            if form_dict.get('lights', None) == 'on':
+            if form_dict.get('light_state', None) == 'on':
                 # turn bulbs on
                 self.state.turn_on_lights()
                 logging.info('Light(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('lights', None) == 'off':
+            elif form_dict.get('light_state', None) == 'off':
                 # turn bulbs off
                 self.state.turn_off_lights()
                 logging.info('Light(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('lights_enable', None) == 'on':
+            elif form_dict.get('light_timer', None) == 'on':
                 # Enable timer control of lights
-                self.state.lights_enable = True
-                self.state.lights_enable_msg = 'ON'
+                self.state.light_timer = True
                 logging.info('Timer control of lights ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('lights_enable', None) == 'off':
+            elif form_dict.get('light_timer', None) == 'off':
                 # Disable timer control of lights
-                self.state.lights_enable = False
-                self.state.lights_enable_msg = 'OFF'
+                self.state.light_timer = False
                 logging.info('Timer control of lights DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('outlets', None) == 'on':
+            elif form_dict.get('outlet_state', None) == 'on':
                 # Turn outlet on
                 self.state.turn_on_outlets()
                 logging.info('Outlet(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('outlets', None) == 'off':
+            elif form_dict.get('outlet_state', None) == 'off':
                 # Turn outlet off
                 self.state.turn_off_outlets()
                 logging.info('Outlet(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('outlets_enable', None) == 'on':
+            elif form_dict.get('outlet_timer', None) == 'on':
                 # Enable timer control of outlet
-                self.state.outlets_enable = True
-                self.state.outlets_enable_msg = 'ON'
+                self.state.outlet_timer = True
                 logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-            elif form_dict.get('outlets_enable', None) == 'off':
+            elif form_dict.get('outlet_timer', None) == 'off':
                 # Disable timer control of outlet
-                self.state.outlets_enable = False
-                self.state.outlets_enable_msg = 'OFF'
+                self.state.outlet_timer = False
                 logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
             elif form_dict.get('brightness', None) != None:
                 self.state.set_brightness(int(form_dict.get('brightness')))
 
             # Return success (201) and stay on the same page
-            return render_template('index.html', timer_msg=timer_msg, lights_msg=self.state.lights_msg, lights_enable_msg=self.state.lights_enable_msg, outlets_msg=self.state.outlets_msg, outlets_enable_msg=self.state.outlets_enable_msg, brightness=str(self.state.brightness)), 200
+            return render_template('index.html', on_time=self.timer.get_next_dusk_time().strftime("%H:%M"), off_time=self.timer.get_next_lights_out_time().strftime("%H:%M"), light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness)), 200
 
         elif request.method == 'GET':
             # pass the output state to index.html to display current state on webpage
-            return render_template('index.html', timer_msg=timer_msg, lights_msg=self.state.lights_msg, lights_enable_msg=self.state.lights_enable_msg, outlets_msg=self.state.outlets_msg, outlets_enable_msg=self.state.outlets_enable_msg, brightness=str(self.state.brightness))
+            return render_template('index.html', on_time=self.timer.get_next_dusk_time().strftime("%H:%M"), off_time=self.timer.get_next_lights_out_time().strftime("%H:%M"), light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness))
 
     def show_log(self):
         ''' Returns webpage /log
@@ -314,13 +299,12 @@ class FlaskThread(Thread):
         time = request.form['off_time']
         if time == '':
             logging.error('Invalid lights out time requested.')
-            return render_template('off-time.html', timer_msg="Invalid time"), 200
+            return render_template('off-time.html', off_time="Invalid time"), 200
         t = time.split(':')
         self.timer.set_lights_out_time(int(t[0]),int(t[1]))
-        timer_msg = 'Timer lights off-time is now set to: {}'.format(time)
 
         # Return a page showing new times and return success (201)
-        return render_template('off-time.html', timer_msg=timer_msg), 200
+        return render_template('off-time.html', off_time=self.timer.get_next_lights_out_time().strftime("%H:%M")), 200
 
 #### Function definitions ####
 
@@ -341,8 +325,12 @@ conf.read(os.path.join(os.path.abspath(os.path.dirname(__file__)),'pi-lights.con
 
 # Configuration settings that are required
 try:
-    BULBS = json.loads(conf.get('pi-lights', 'bulbs'))
-    OUTLETS = json.loads(conf.get('pi-lights', 'outlets'))
+    BULBS = conf.get('pi-lights', 'bulbs')
+    if BULBS != None:
+        BULBS = BULBS.split(',')
+    OUTLETS = conf.get('pi-lights', 'outlets')
+    if OUTLETS != None:
+        OUTLETS = OUTLETS.split(',')
 except configparser.NoOptionError as e:
     print('Missing parameters in configuration file: {}'.format(e))
     sys.exit(os.EX_CONFIG)

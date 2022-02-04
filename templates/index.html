@@ -24,11 +24,16 @@
         <tr><td>
             <h2>Lights</h2>
             This section provides control and setting for one or more smart lights.
-            <br>Currently lights are: <b>{{lights_msg}}</b>
+            <br>Currently lights are: 
+            {% if light_state %}
+            <b>ON</b>
+            {% else %}
+            <b>OFF</b>
+            {% endif %}
             <br>
             <form action="" method="post">
-                <button name="lights" type="submit" value="on">Lights ON</button>
-                <button name="lights" type="submit" value="off">Lights OFF</button>
+                <button name="light_state" type="submit" value="on">Lights ON</button>
+                <button name="light_state" type="submit" value="off">Lights OFF</button>
             </form>
 
             <b>Brightness setting for Lights</b>
@@ -41,30 +46,47 @@
             </form>
 
             <b>Enable Timer Control of Lights</b>
-            <br>Currently the timer control of the lights is: <b>{{lights_enable_msg}}</b>
+            <br>Currently the timer control of the lights is: 
+            {% if light_timer %}
+            <b>ON</b>
+            {% else %}
+            <b>OFF</b>
+            {% endif %}
+            
             <form action="" method="post">
-                <button name="lights_enable" type="submit" value="on">ENABLE</button>
-                <button name="lights_enable" type="submit" value="off">DISABLE</button>
+                <button name="light_timer" type="submit" value="on">ENABLE</button>
+                <button name="light_timer" type="submit" value="off">DISABLE</button>
             </form>
         </td></tr>
         <tr><td>
             <h2>Outlets</h2>
             This section provides control and setting for one or more smart outlets.
-            <br>Currently outlets are: <b>{{outlets_msg}}</b>
+            <br>Currently outlets are: 
+            {% if outlet_state %}
+            <b>ON</b>
+            {% else %}
+            <b>OFF</b>
+            {% endif %}
+
             <br>
             <form action="" method="post">
-                <button name="outlets" type="submit" value="on">Outlets ON</button>
-                <button name="outlets" type="submit" value="off">Outlets OFF</button>
+                <button name="outlet_state" type="submit" value="on">Outlets ON</button>
+                <button name="outlet_state" type="submit" value="off">Outlets OFF</button>
             </form>
 
             <b>Enable Timer Control of Outlet(s)</b>
             <br>The outlets may also be controlled by the timer.
             <br>This can be helpful to control indoor lights while away on vacation.
-            <br>Currently the timer control of the outlet(s) is: <b>{{outlets_enable_msg}}</b>
+            <br>Currently the timer control of the outlet(s) is:
+            {% if outlet_timer %}
+            <b>ON</b>
+            {% else %}
+            <b>OFF</b>
+            {% endif %}
             <br>
             <form action="" method="post">
-                <button name="outlets_enable" type="submit" value="on">ENABLE</button>
-                <button name="outlets_enable" type="submit" value="off">DISABLE</button>
+                <button name="outlet_timer" type="submit" value="on">ENABLE</button>
+                <button name="outlet_timer" type="submit" value="off">DISABLE</button>
             </form>
         </td></tr>
         <tr><td>
@@ -72,7 +94,8 @@
             The lights will be automatically turned on and off each day.
             The daily on-time is set to the dusk time and the off-time can be adjusted below.
             <br>The current settings are as follows:
-            <br>{{timer_msg|safe}}
+            <br>Timer ON time: {{on_time}}
+            <br>Timer OFF time: {{off_time}}
             <p>
             <form method="POST" action="/off-time">
                 Select a new timer off-time:
