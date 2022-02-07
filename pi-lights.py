@@ -238,6 +238,9 @@ class FlaskThread(Thread):
     def index(self):
         ''' Returns index.html webpage, methods=['GET', 'POST']
         '''
+        on_time=self.timer.get_next_dusk_time().strftime("%H:%M")
+        off_time=self.timer.get_next_lights_out_time().strftime("%H:%M")
+
         # Process POST actions if requested
         if request.method == 'POST':
             # Get form post as a dictionary
@@ -278,11 +281,11 @@ class FlaskThread(Thread):
                 self.state.set_brightness(int(form_dict.get('brightness')))
 
             # Return success (201) and stay on the same page
-            return render_template('index.html', on_time=self.timer.get_next_dusk_time().strftime("%H:%M"), off_time=self.timer.get_next_lights_out_time().strftime("%H:%M"), light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness)), 200
+            return render_template('index.html', on_time=on_time, off_time=off_time, lights=self.state.bulbs, outlets=self.state.outlets, light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness)), 200
 
         elif request.method == 'GET':
             # pass the output state to index.html to display current state on webpage
-            return render_template('index.html', on_time=self.timer.get_next_dusk_time().strftime("%H:%M"), off_time=self.timer.get_next_lights_out_time().strftime("%H:%M"), light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness))
+            return render_template('index.html', on_time=on_time, off_time=off_time, lights=self.state.bulbs, outlets=self.state.outlets, light_state=self.state.light_state, light_timer=self.state.light_timer, outlet_state=self.state.outlet_state, outlet_timer=self.state.outlet_timer, brightness=str(self.state.brightness))
 
     def show_log(self):
         ''' Returns webpage /log
@@ -323,14 +326,18 @@ def sigint_handler(signum, frame):
 conf = configparser.ConfigParser()
 conf.read(os.path.join(os.path.abspath(os.path.dirname(__file__)),'pi-lights.conf'))
 
-# Configuration settings that are required
+# Read and make a list of bulbs and outlets from config file
 try:
     BULBS = conf.get('pi-lights', 'bulbs')
     if BULBS != None:
         BULBS = BULBS.split(',')
+        for i in range(len(BULBS)):
+            BULBS[i] = BULBS[i].strip()
     OUTLETS = conf.get('pi-lights', 'outlets')
     if OUTLETS != None:
         OUTLETS = OUTLETS.split(',')
+        for i in range(len(OUTLETS)):
+            OUTLETS[i] = OUTLETS[i].strip()
 except configparser.NoOptionError as e:
     print('Missing parameters in configuration file: {}'.format(e))
     sys.exit(os.EX_CONFIG)
@@ -373,7 +380,7 @@ if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.s
     logging.error('Invalid off_time in conf file {} - using default off-time 23:00'.format(OFF_TIME))
     OFF_TIME = "23:00"
 
-# setup a sigint handler
+# setup a sigint handler for graceful exit
 signal.signal(signal.SIGINT, sigint_handler)
 
 # Connect to MQTT broker and create object to control state of all lights and outlets

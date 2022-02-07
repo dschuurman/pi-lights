@@ -13,24 +13,23 @@
 <body>
     <h1>Home Automation of Lights and Outlets</h1>
     <p>
-        The following settings can be used to control or configure the operation of one or more lights and outlets
-        as specified in the pi-lights configuration file.
-        Note that the lights and outlets can also be manually turned on and off without this webpage by 
-        <a href="https://www.zigbee2mqtt.io/guide/usage/binding.html">binding</a> them to
-        a <a href="https://www.zigbee2mqtt.io/devices/E1743.html">compatible Zigbee switch</a>.
+        The following makes use of the <a href="https://www.zigbee2mqtt.io/">zigbee2mqtt</a> library
+        manage of a variety of Zigbee home lights, outlets, and sensors as specified
+        in a configuration file.
     </p>
 
     <table>
         <tr><td>
             <h2>Lights</h2>
             This section provides control and setting for one or more smart lights.
-            <br>Currently lights are: 
+            <br>The Zigbee "friendly names" of the configued lights are: {{ lights|join(', ') }}
+            
+            <p>Current state of lights: 
             {% if light_state %}
             <b>ON</b>
             {% else %}
             <b>OFF</b>
             {% endif %}
-            <br>
             <form action="" method="post">
                 <button name="light_state" type="submit" value="on">Lights ON</button>
                 <button name="light_state" type="submit" value="off">Lights OFF</button>
@@ -61,13 +60,14 @@
         <tr><td>
             <h2>Outlets</h2>
             This section provides control and setting for one or more smart outlets.
-            <br>Currently outlets are: 
+            <br>The Zigbee "friendly names" of the configued outlets are: {{ outlets|join(', ') }} 
+            
+            <p>Current state of outlets: 
             {% if outlet_state %}
             <b>ON</b>
             {% else %}
             <b>OFF</b>
             {% endif %}
-
             <br>
             <form action="" method="post">
                 <button name="outlet_state" type="submit" value="on">Outlets ON</button>
@@ -110,5 +110,4 @@
     </p>
 
 </body>
-
 </html>
