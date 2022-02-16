@@ -115,8 +115,8 @@ class State:
         '''
         self.client.disconnect()
 
-class Timer:
-    ''' Timer class used to control periodic events
+class LightTimer:
+    ''' Light_Timer class used to schedule and control lights
     '''
     def __init__(self, scheduler, state, city, lights_out_time):
         ''' Constructor 
@@ -127,8 +127,21 @@ class Timer:
         self.lights_out_hour = lights_out_time.hour
         self.lights_out_minute = lights_out_time.minute
 
+        # Get the lights on-time for today
+        lights_on_time = self.get_next_dusk_time()
+        today = datetime.now().date()
+        lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
+
+        # Initialize lights and schedule events
+        # If current time is between lights ON and OFF then set lights ON and schedule event for OFF time
+        if lights_on_time <= datetime.now() < lights_out_time:
+            self.lights_on()
+        # Otherwise turn lights OFF and schedule event to turn lights ON at next dusk time
+        else:
+            self.lights_off()
+
     def lights_on(self):
-        ''' Scheduler handler that turns lights on
+        ''' turn lights on and schedule next event to turn lights off
         '''
         logging.info(f'*** Turning lights ON at {datetime.now().strftime("%m/%d/%Y %H:%M:%S")} ***')
         self.state.turn_on_lights()
@@ -142,10 +155,9 @@ class Timer:
         logging.info(f'Next event = Lights OFF at: {self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")}')
         seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
         self.scheduler.enter(seconds, 1, self.lights_off)
-        print('turned on', self.scheduler.queue)
 
     def lights_off(self):
-        ''' Scheduler handler that turns lights off
+        ''' turn lights off and schedule next event to turn lights on
         '''
         logging.info(f'*** Turning lights OFF at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")} ***')
         self.state.turn_off_lights()
@@ -160,7 +172,6 @@ class Timer:
         logging.info(f'Next event = Lights ON at: {dusk_time.strftime("%m/%d/%Y, %H:%M:%S")} (dusk time)')
         seconds = round((dusk_time - datetime.now()).total_seconds())
         self.scheduler.enter(seconds, 1, self.lights_on)
-        print('turned off', self.scheduler.queue)
 
     def set_lights_out_time(self, hour, minute):
         ''' Set lights out time
@@ -189,7 +200,7 @@ class Timer:
         return lights_out_time
 
     def get_next_dusk_time(self):
-        ''' Determine next dusk time for local city using astral library
+        ''' Determine next dusk time for local city
         '''
         try:
             city = lookup(self.city, database())
@@ -206,16 +217,16 @@ class Timer:
             s = sun(city.observer, tzinfo=city.timezone, date=date.today()+timedelta(days=1))
             dusk = s['dusk']
             dusk = dusk.replace(tzinfo=None)
-
         return dusk
+
 
 class FlaskThread(Thread):
     ''' Class definition to run flask
     '''
-    def __init__(self, port, state, timer, logfile):
+    def __init__(self, port, state, light_timer, logfile):
         self.port = port
         self.state = state
-        self.timer = timer
+        self.light_timer = light_timer
         self.logfile = logfile
         Thread.__init__(self)
         # Create a flask object and initialize web pages
@@ -232,8 +243,8 @@ class FlaskThread(Thread):
     def index(self):
         ''' Returns index.html webpage, methods=['GET', 'POST']
         '''
-        on_time=self.timer.get_next_dusk_time().strftime("%H:%M")
-        off_time=self.timer.get_next_lights_out_time().strftime("%H:%M")
+        on_time=self.light_timer.get_next_dusk_time().strftime("%H:%M")
+        off_time=self.light_timer.get_next_lights_out_time().strftime("%H:%M")
 
         # Process POST actions if requested
         if request.method == 'POST':
@@ -298,18 +309,16 @@ class FlaskThread(Thread):
             logging.error('Invalid lights out time requested.')
             return render_template('off-time.html', off_time="Invalid time"), 200
         t = time.split(':')
-        self.timer.set_lights_out_time(int(t[0]),int(t[1]))
+        self.light_timer.set_lights_out_time(int(t[0]),int(t[1]))
 
         # Return a page showing new times and return success (201)
-        return render_template('off-time.html', off_time=self.timer.get_next_lights_out_time().strftime("%H:%M")), 200
+        return render_template('off-time.html', off_time=self.light_timer.get_next_lights_out_time().strftime("%H:%M")), 200
 
 #### Function definitions ####
 
 def sigint_handler(signum, frame):
     ''' SIGINT signal handler to quit gracefully
     '''
-    # Cancel alarm timer
-    signal.alarm(0)
     logging.info(f'Program recevied SIGINT at: {datetime.now()}')
     logging.shutdown()
     os._exit(0)
@@ -374,7 +383,7 @@ if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.s
     logging.error(f'Invalid off_time in conf file {OFF_TIME} - using default off-time 23:00')
     OFF_TIME = "23:00"
 
-# setup a sigint handler for graceful exit
+# setup a SIGINT handler for graceful exit
 signal.signal(signal.SIGINT, sigint_handler)
 
 # Connect to MQTT broker and create object to control state of all lights and outlets
@@ -388,37 +397,18 @@ state = State(BULBS, OUTLETS, BRIGHTNESS, client)
 lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
 logging.info(f'Default lights OFF time set to: {lights_out_time.strftime("%H:%M")}')
 
-# schedule events to control lights
+# Create scheduler to control lights
 # Set delayfunc to run with (at most) 1 second sleep so that it can periodically wake up to adjust 
-# to any changes to the scheduler queue (which can occur due to a webpage action in the flask thread)
+# to any changes to the scheduler queue (which can occur in the flask thread)
 scheduler = sched.scheduler(time.time, delayfunc=lambda time_to_sleep: time.sleep(min(1, time_to_sleep)))
 
-# Create a timer object
-timer = Timer(scheduler, state, CITY, lights_out_time)
-
-# Get the lights on-time for today
-lights_on_time = timer.get_next_dusk_time()
-today = datetime.now().date()
-lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
-
-# If current time is between lights ON and OFF time then 
-# turn lights ON and set schedule to turn lights OFF
-if lights_on_time <= datetime.now() < lights_out_time:
-    state.turn_on_lights()
-    seconds = round((timer.get_next_lights_out_time() - datetime.now()).total_seconds())
-    scheduler.enter(seconds, 1, timer.lights_off)
-    logging.info(f'Turning lights ON and initializing scheduler to turn lights OFF at: {timer.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")}')
-# Otherwise set schedule to turn lights ON at next dusk time
-else:
-    state.turn_off_lights()
-    seconds = round((timer.get_next_dusk_time() - datetime.now()).total_seconds())
-    scheduler.enter(seconds, 1, timer.lights_on)
-    logging.info(f'Initializing scheduler to turn lights ON at: {timer.get_next_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")}')
+# Create a light timer object
+light_timer = LightTimer(scheduler, state, CITY, lights_out_time)
 
 # If web interface is enabled, start the flask web server in a thread
 if WEB_INTERFACE:
     logging.info('Web interface ENABLED')
-    server = FlaskThread(PORT,state,timer,LOG_FILE)
+    server = FlaskThread(PORT,state,light_timer,LOG_FILE)
     server.start()
 else:
     logging.info('Web interface DISABLED')
