@@ -9,7 +9,7 @@
 import sys, os
 import paho.mqtt.client as mqtt
 import logging
-import configparser, json
+import configparser
 from datetime import date, datetime, timezone, timedelta
 from astral.sun import sun
 from astral.geocoder import lookup, database
@@ -17,9 +17,10 @@ from threading import Thread, Lock
 from flask import Flask, render_template, request
 from waitress import serve
 import signal
+import sched, time
 
 # Constants
-VERSION = 1.02
+VERSION = 1.04
 MQTT_KEEPALIVE = 60
 
 #### Class definitions ####
@@ -36,7 +37,7 @@ class State:
         self.bulbs = bulbs
         self.outlets = outlets
         self.set_brightness(brightness)
-        logging.info('Devices: {},{}'.format(bulbs, outlets))
+        logging.info(f'Devices: {bulbs},{outlets}')
        
         # Use a mutex for thread synchronization
         self.lock = Lock()
@@ -56,9 +57,9 @@ class State:
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
-            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "ON")
+            (rc, msg_id) = self.client.publish(f'zigbee2mqtt/{bulb}/set/state', 'ON')
             if rc != 0:
-                logging.error('MQTT publish return codes: {},{}'.format(rc))
+                logging.error(f'MQTT publish return codes: {rc}')
         self.light_state = True
         self.lock.release()
         logging.debug('Lights turned on')
@@ -68,9 +69,9 @@ class State:
         '''
         self.lock.acquire()
         for bulb in self.bulbs:
-            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(bulb), "OFF")
+            (rc, msg_id) = self.client.publish(f'zigbee2mqtt/{bulb}/set/state', 'OFF')
             if rc != 0:
-                logging.error('MQTT publish return code: {}'.format(rc))       
+                logging.error(f'MQTT publish return code: {rc}')       
         self.light_state = False
         self.lock.release()
         logging.debug('Lights turned off')
@@ -80,9 +81,9 @@ class State:
         '''
         self.lock.acquire()
         for outlet in self.outlets:
-            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "ON")
+            (rc, msg_id) = self.client.publish(f'zigbee2mqtt/{outlet}/set/state', 'ON')
             if rc != 0:
-                logging.error('MQTT publish return code: {}'.format(rc))
+                logging.error(f'MQTT publish return code: {rc}')
         self.outlet_state = True
         self.lock.release()
         logging.debug('Outlets turned on')
@@ -92,9 +93,9 @@ class State:
         '''
         self.lock.acquire()
         for outlet in self.outlets:
-            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/state".format(outlet), "OFF")
+            (rc, msg_id) = self.client.publish(f'zigbee2mqtt/{outlet}/set/state', 'OFF')
             if rc != 0:
-                logging.error('MQTT publish return code: {}'.format(rc))
+                logging.error(f'MQTT publish return code: {rc}')
         self.outlet_state = False
         self.lock.release()
         logging.debug('Outlets turned off')
@@ -104,10 +105,10 @@ class State:
         '''
         self.brightness = value
         for bulb in self.bulbs:
-            (rc, msg_id) = self.client.publish("zigbee2mqtt/{}/set/brightness".format(bulb), self.brightness)
+            (rc, msg_id) = self.client.publish(f'zigbee2mqtt/{bulb}/set/brightness', self.brightness)
             if rc != 0:
-                logging.error('MQTT publish return codes: {},{}'.format(rc1,rc2))
-        logging.info('Brightness set to: {}'.format(self.brightness))
+                logging.error(f'MQTT publish return codes: {rc}')
+        logging.info(f'Brightness set to: {self.brightness}')
 
     def disconnect(self):
         ''' Graceful disconnect from MQTT broker
@@ -117,48 +118,49 @@ class State:
 class Timer:
     ''' Timer class used to control periodic events
     '''
-    def __init__(self, state, city, lights_out_time):
+    def __init__(self, scheduler, state, city, lights_out_time):
         ''' Constructor 
         '''
+        self.scheduler = scheduler
         self.state = state
         self.city = city
         self.lights_out_hour = lights_out_time.hour
         self.lights_out_minute = lights_out_time.minute
-    
-    def lights_on(self, signum, frame):
-        ''' Signal handler that turns lights on
+
+    def lights_on(self):
+        ''' Scheduler handler that turns lights on
         '''
-        logging.info('*** Turning lights ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y %H:%M:%S")))
+        logging.info(f'*** Turning lights ON at {datetime.now().strftime("%m/%d/%Y %H:%M:%S")} ***')
         self.state.turn_on_lights()
 
         # If outlets are enabled then turn them on as well
         if self.state.outlet_timer:
-            logging.info('*** Turning outlets ON at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+            logging.info(f'*** Turning outlets ON at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")} ***')
             self.state.turn_on_outlets()
 
         # set next lights off time
-        signal.signal(signal.SIGALRM, self.lights_off)
-        logging.info('Next event = Lights OFF at: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
+        logging.info(f'Next event = Lights OFF at: {self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")}')
         seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
-        signal.alarm(seconds)
+        self.scheduler.enter(seconds, 1, self.lights_off)
+        print('turned on', self.scheduler.queue)
 
-    def lights_off(self, signum, frame):
-        ''' Signal handler that turns lights off
+    def lights_off(self):
+        ''' Scheduler handler that turns lights off
         '''
-        logging.info('*** Turning lights OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+        logging.info(f'*** Turning lights OFF at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")} ***')
         self.state.turn_off_lights()
 
         # If outlets are enabled then turn them off as well
         if self.state.outlet_timer:
-            logging.info('*** Turning outlets OFF at {} ***'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+            logging.info(f'*** Turning outlets OFF at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")} ***')
             self.state.turn_off_outlets()       
 
         # set next lights on time
-        signal.signal(signal.SIGALRM, self.lights_on)
         dusk_time = self.get_next_dusk_time()
-        logging.info('Next event = Lights ON at: {} (dusk time)'.format(dusk_time.strftime("%m/%d/%Y, %H:%M:%S")))
+        logging.info(f'Next event = Lights ON at: {dusk_time.strftime("%m/%d/%Y, %H:%M:%S")} (dusk time)')
         seconds = round((dusk_time - datetime.now()).total_seconds())
-        signal.alarm(seconds)
+        self.scheduler.enter(seconds, 1, self.lights_on)
+        print('turned off', self.scheduler.queue)
 
     def set_lights_out_time(self, hour, minute):
         ''' Set lights out time
@@ -166,26 +168,16 @@ class Timer:
         # Update new lights out time
         self.lights_out_hour = hour
         self.lights_out_minute = minute
-        logging.info('Lights out time changed to: {}:{:02}'.format(self.lights_out_hour, self.lights_out_minute))
+        logging.info(f'Lights out time changed to: {self.lights_out_hour}:{self.lights_out_minute:2}')
 
-        # The following logic determines the implications of the new off-time
-        # for the current state of the light and updates the alarm time as needed
-
-        # If alarm signal is waiting to turn off lights, then lights are currently on
-        if signal.getsignal(signal.SIGALRM) == self.lights_off:
-            # if new off-time is after the next on-time, then lights should go off now
-            # (ie. off-time was updated to a time earlier than now)
-            if self.get_next_lights_out_time() > self.get_next_dusk_time():
-                logging.info('New lights out time has passed... turning off lights now...')
-                signal.alarm(1)
-            else:                   # otherwise update alarm time to turn off lights at new off-time
-                seconds = round((self.get_next_lights_out_time() - datetime.now()).total_seconds())
-                signal.alarm(seconds)
-                logging.info('Adjusting lights out time for today: {}'.format(self.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-        # otherwise lights are currently off so check current time relative to new off-time
-        elif (datetime.now() < self.get_next_lights_out_time() < self.get_next_dusk_time()):
-                logging.info('New light off time implies lights should be on now...')
-                signal.alarm(1)     # If current time falls within new on-time, update alarm to turn lights on now
+        # Retrieve current event in the queue and load new events
+        event = self.scheduler.queue[0]
+        # If lights should now be on: turn them on (and add next event to the queue)
+        if datetime.now() < self.get_next_lights_out_time() < self.get_next_dusk_time():
+            self.lights_on()
+        else:   # Otherwise turn lights off (and add the next event to the queue)
+            self.lights_off()
+        self.scheduler.cancel(event)   # Purge old event from the queue
 
     def get_next_lights_out_time(self):
         ''' Get next lights out time
@@ -202,17 +194,19 @@ class Timer:
         try:
             city = lookup(self.city, database())
         except KeyError:         # Log error and return 5PM by default if city not found
-            logging.error('Unrecognized city {}, using default dusk time.'.format(self.city))
+            logging.error(f'Unrecognized city {self.city}, using default dusk time.')
             return datetime.today().replace(hour=17, minute=0)
         # Compute dusk time for today (corresponding to a solar depression angle of 6 degrees)
         s = sun(city.observer, tzinfo=city.timezone)
         dusk = s['dusk']
         dusk = dusk.replace(tzinfo=None)  # remove timezone to be compatible with datetime
+
         # If dusk time has already passed for today, return next dusk time for tomorrow
         if dusk < datetime.now():
             s = sun(city.observer, tzinfo=city.timezone, date=date.today()+timedelta(days=1))
             dusk = s['dusk']
             dusk = dusk.replace(tzinfo=None)
+
         return dusk
 
 class FlaskThread(Thread):
@@ -248,35 +242,35 @@ class FlaskThread(Thread):
             if form_dict.get('light_state', None) == 'on':
                 # turn bulbs on
                 self.state.turn_on_lights()
-                logging.info('Light(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Light(s) turned on via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('light_state', None) == 'off':
                 # turn bulbs off
                 self.state.turn_off_lights()
-                logging.info('Light(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Light(s) turned off via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('light_timer', None) == 'on':
                 # Enable timer control of lights
                 self.state.light_timer = True
-                logging.info('Timer control of lights ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Timer control of lights ENABLED at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('light_timer', None) == 'off':
                 # Disable timer control of lights
                 self.state.light_timer = False
-                logging.info('Timer control of lights DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Timer control of lights DISABLED at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('outlet_state', None) == 'on':
                 # Turn outlet on
                 self.state.turn_on_outlets()
-                logging.info('Outlet(s) turned on via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Outlet(s) turned on via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('outlet_state', None) == 'off':
                 # Turn outlet off
                 self.state.turn_off_outlets()
-                logging.info('Outlet(s) turned off via web interface at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Outlet(s) turned off via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('outlet_timer', None) == 'on':
                 # Enable timer control of outlet
                 self.state.outlet_timer = True
-                logging.info('Timer control of outlet ENABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Timer control of outlet ENABLED at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('outlet_timer', None) == 'off':
                 # Disable timer control of outlet
                 self.state.outlet_timer = False
-                logging.info('Timer control of outlet DISABLED at {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
+                logging.info(f'Timer control of outlet DISABLED at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('brightness', None) != None:
                 self.state.set_brightness(int(form_dict.get('brightness')))
 
@@ -316,7 +310,7 @@ def sigint_handler(signum, frame):
     '''
     # Cancel alarm timer
     signal.alarm(0)
-    logging.info('Program recevied SIGINT at: {}'.format(datetime.now()))
+    logging.info(f'Program recevied SIGINT at: {datetime.now()}')
     logging.shutdown()
     os._exit(0)
 
@@ -362,22 +356,22 @@ else:
     logging.basicConfig(filename=LOG_FILE, level=logging.INFO, filemode='w')
 
 # Start log file
-logging.info('Starting at: {}'.format(datetime.now().strftime("%m/%d/%Y, %H:%M:%S")))
-logging.info('Software version: {}'.format(VERSION))
+logging.info(f'Starting at: {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
+logging.info(f'Software version: {VERSION}')
 
 # Check configuration settings
 if not (0 <= BRIGHTNESS <=254):
-    logging.error("Invalid brightness setting in configuration file: {}".format(BRIGHTNESS))
+    logging.error(f'Invalid brightness setting in configuration file: {BRIGHTNESS}')
 else:
-    logging.info('Brightness settting: {}'.format(BRIGHTNESS))
+    logging.info(f'Brightness settting: {BRIGHTNESS}')
 
 try:
     lookup(CITY, database())
 except KeyError:
-    logging.error('Unrecognized city in configuration file: {}'.format(CITY))
+    logging.error(f'Unrecognized city in configuration file: {CITY}')
 
 if not ((':' in OFF_TIME) and (4 <= len(OFF_TIME) <= 5) and (0 <= int(OFF_TIME.split(':')[0]) < 24) and (0 <= int(OFF_TIME.split(':')[1])<60)):
-    logging.error('Invalid off_time in conf file {} - using default off-time 23:00'.format(OFF_TIME))
+    logging.error(f'Invalid off_time in conf file {OFF_TIME} - using default off-time 23:00')
     OFF_TIME = "23:00"
 
 # setup a sigint handler for graceful exit
@@ -387,15 +381,20 @@ signal.signal(signal.SIGINT, sigint_handler)
 client = mqtt.Client()
 ret = client.connect(BROKER_IP, BROKER_PORT, MQTT_KEEPALIVE)
 if ret != 0:
-    logging.error('MQTT connect return code: {}'.format(ret))
+    logging.error(f'MQTT connect return code: {ret}')
 state = State(BULBS, OUTLETS, BRIGHTNESS, client)
 
 # Set default lights off-time for today
 lights_out_time = datetime.now().replace(hour=int(OFF_TIME.split(':')[0]), minute=int(OFF_TIME.split(':')[1]))
-logging.info('Default lights OFF time set to: {}'.format(lights_out_time.strftime("%H:%M")))
+logging.info(f'Default lights OFF time set to: {lights_out_time.strftime("%H:%M")}')
+
+# schedule events to control lights
+# Set delayfunc to run with (at most) 1 second sleep so that it can periodically wake up to adjust 
+# to any changes to the scheduler queue (which can occur due to a webpage action in the flask thread)
+scheduler = sched.scheduler(time.time, delayfunc=lambda time_to_sleep: time.sleep(min(1, time_to_sleep)))
 
 # Create a timer object
-timer = Timer(state, CITY, lights_out_time)
+timer = Timer(scheduler, state, CITY, lights_out_time)
 
 # Get the lights on-time for today
 lights_on_time = timer.get_next_dusk_time()
@@ -403,19 +402,18 @@ today = datetime.now().date()
 lights_on_time = lights_on_time.replace(year=today.year, month=today.month, day=today.day)
 
 # If current time is between lights ON and OFF time then 
-# turn lights ON and set SIGALARM to turn lights OFF
+# turn lights ON and set schedule to turn lights OFF
 if lights_on_time <= datetime.now() < lights_out_time:
     state.turn_on_lights()
-    signal.signal(signal.SIGALRM, timer.lights_off)
     seconds = round((timer.get_next_lights_out_time() - datetime.now()).total_seconds())
-    signal.alarm(seconds)
-    logging.info('Turning lights ON and initializing SIGALARM to turn lights OFF at: {}'.format(timer.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")))
-# Otherwise set SIGALARM to turn lights ON at next dusk time
+    scheduler.enter(seconds, 1, timer.lights_off)
+    logging.info(f'Turning lights ON and initializing scheduler to turn lights OFF at: {timer.get_next_lights_out_time().strftime("%m/%d/%Y, %H:%M:%S")}')
+# Otherwise set schedule to turn lights ON at next dusk time
 else:
-    signal.signal(signal.SIGALRM, timer.lights_on)
+    state.turn_off_lights()
     seconds = round((timer.get_next_dusk_time() - datetime.now()).total_seconds())
-    signal.alarm(seconds)
-    logging.info('Initializing SIGALARM to turn lights ON at: {}'.format(timer.get_next_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")))
+    scheduler.enter(seconds, 1, timer.lights_on)
+    logging.info(f'Initializing scheduler to turn lights ON at: {timer.get_next_dusk_time().strftime("%m/%d/%Y, %H:%M:%S")}')
 
 # If web interface is enabled, start the flask web server in a thread
 if WEB_INTERFACE:
@@ -425,8 +423,6 @@ if WEB_INTERFACE:
 else:
     logging.info('Web interface DISABLED')
 
-try:
-    client.loop_forever()
-except KeyboardInterrupt:
-    client.disconnect()
-    logging.info('Exiting')
+client.loop_start()
+scheduler.run()  
+logging.info('Exiting...')
