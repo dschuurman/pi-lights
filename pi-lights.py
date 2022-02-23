@@ -43,7 +43,7 @@ class State:
         self.lock = Lock()
 
         # Turn off everything to start
-        self.turn_off_lights()
+        self.turn_off_bulbs()
         self.turn_off_outlets()
 
         # Initialize timer control of lights to be enabled (normally used for porch lights)
@@ -52,7 +52,7 @@ class State:
         # Initialize timer control of outlets to be disabled (normally used for vacation)
         self.outlet_timer = False
 
-    def turn_on_lights(self):
+    def turn_on_bulbs(self):
         ''' Method to turn on all bulbs
         '''
         self.lock.acquire()
@@ -64,7 +64,7 @@ class State:
         self.lock.release()
         logging.debug('Lights turned on')
 
-    def turn_off_lights(self):
+    def turn_off_bulbs(self):
         ''' Method to turn off all bulbs
         '''
         self.lock.acquire()
@@ -144,7 +144,7 @@ class LightTimer:
         ''' turn lights on and schedule next event to turn lights off
         '''
         logging.info(f'*** Turning lights ON at {datetime.now().strftime("%m/%d/%Y %H:%M:%S")} ***')
-        self.state.turn_on_lights()
+        self.state.turn_on_bulbs()
 
         # If outlets are enabled then turn them on as well
         if self.state.outlet_timer:
@@ -160,7 +160,7 @@ class LightTimer:
         ''' turn lights off and schedule next event to turn lights on
         '''
         logging.info(f'*** Turning lights OFF at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")} ***')
-        self.state.turn_off_lights()
+        self.state.turn_off_bulbs()
 
         # If outlets are enabled then turn them off as well
         if self.state.outlet_timer:
@@ -179,7 +179,7 @@ class LightTimer:
         # Update new lights out time
         self.lights_out_hour = hour
         self.lights_out_minute = minute
-        logging.info(f'Lights out time changed to: {self.lights_out_hour}:{self.lights_out_minute:2}')
+        logging.info(f'Lights out time changed to: {self.lights_out_hour}:{self.lights_out_minute:02}')
 
         # Retrieve current event in the queue and load new events
         event = self.scheduler.queue[0]
@@ -252,12 +252,12 @@ class FlaskThread(Thread):
             form_dict = request.form
             if form_dict.get('light_state', None) == 'on':
                 # turn bulbs on
-                self.state.turn_on_lights()
-                logging.info(f'Light(s) turned on via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
+                self.state.turn_on_bulbs()
+                logging.info(f'Bulb(s) turned on via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('light_state', None) == 'off':
                 # turn bulbs off
-                self.state.turn_off_lights()
-                logging.info(f'Light(s) turned off via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
+                self.state.turn_off_bulbs()
+                logging.info(f'Bulb(s) turned off via web interface at {datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}')
             elif form_dict.get('light_timer', None) == 'on':
                 # Enable timer control of lights
                 self.state.light_timer = True
