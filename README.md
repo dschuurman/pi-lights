@@ -1,5 +1,7 @@
 # pi-lights
 
+>***NOTE***: this project has now been subsumed into the [home-sense](https://github.com/dschuurman/home-sense) project.
+
 This project automates home lighting using using the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) 
 wireless protocol. The software automatically turns lights on at dusk and then turns them off at a preset time.
 The motivation for the project was to illuminate porch lights in the evening
@@ -208,3 +210,9 @@ configured to run on port 8081 to avoid a port conflict).
 The `pi-lights.conf` configuration file includes an option to easily enable or disable the web interface.
 The web interface is convenient for testing and setup, but if it is enabled it should 
 be run on a secure local network since the web pages are open and unencrypted.
+
+## Security considerations
+This server is intended to be run on a secure local network since the web pages to control the lights
+are open and unencrypted. The logfile is also accessible via the web interface.
+
+This program is provided "as is" without any warranty, expressed or implied, about merchantability or fitness for a particular purpose. *Your mileage may vary*.

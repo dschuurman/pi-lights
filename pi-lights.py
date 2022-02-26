@@ -20,7 +20,7 @@ import signal
 import sched, time
 
 # Constants
-VERSION = 1.04
+VERSION = 1.05
 MQTT_KEEPALIVE = 60
 
 #### Class definitions ####
