@@ -1,6 +1,6 @@
 # pi-lights
 
->***NOTE***: this project has now been subsumed into the [home-sense](https://github.com/dschuurman/home-sense) project.
+>***NOTE***: this project has now been subsumed into the [pi-home](https://github.com/dschuurman/pi-home) project.
 
 This project automates home lighting using using the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) 
 wireless protocol. The software automatically turns lights on at dusk and then turns them off at a preset time.
@@ -11,8 +11,14 @@ controlling a smart outlet, it provides the functionality of a traditional light
 This code was written for a Raspberry Pi using a Zigbee USB stick, but it could be run on other 
 POSIX compliant systems using a compatible Zigbee adapter.
 
+
+## Software Structure
+The program parses a configuration file at start-up to set initial settings.
+The software uses two threads: a main thread runs the control software and another
+thread runs a flask web service for viewing the current state of the system and adjusting the configuration.
 The code uses a timer signal to turn Zigbee lights and outlets on at dusk 
 (where dusk is determined by your location) and then turns them off at a preset time each day.
+Light on and off events are implemented using a scheduler which stores events in a priority queue. 
 A basic web interface provides a means for configuration and manually controlling the
 lights and outlets.
 
@@ -93,7 +99,6 @@ ota:
 Note that this configuration is for a Zigbee USB adapter which appears as `/dev/ttyACM0`. 
 You can use the `dmesg` command to find the device file associated with
 your Zigbee USB adapter and then update the configuration file accordingly.
-
 Rather than hard-coding a network key, the `network_key` setting used above generates 
 a new random key when Zigbee2MQTT is first run.
 
@@ -184,7 +189,7 @@ messages](https://www.zigbee2mqtt.io/guide/usage/mqtt_topics_and_messages.html).
 ## Setting up the Python control software
 Once Zigbee2MQTT is installed and devices are successfully paired we can setup the
 `pi-lights` control program. This program controls devices by sending MQTT messages
-to the MQTT broker which are then bridged to the Zigbee network by Zignee2MQTT.
+to the MQTT broker which are then bridged to the Zigbee network via Zigbee2MQTT.
 The control program is written in Python 3 and uses the 
 [paho-mqtt](https://www.eclipse.org/paho/index.php?page=clients/python/index.php) library to send
 MQTT messages. The dependencies for `pi-lights` can all be installed from the command-line as follows:
@@ -198,8 +203,8 @@ By default, a log file named `pi-lights.log` will be written in the same folder 
 reflect your local settings (in particular, set your city so that the dusk time can be properly computed).
 
 The `pi-lights` program can be launched at boot time, but should be started only *after* the network is up and running.
-One way to ensure this is to launch the program as a systemd service which is configured to wait for the network to come online 
-([see the example of of using systemd with Zigbee2MQTT](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#optional-running-as-a-daemon-with-systemctl)).
+One way to ensure this is to launch the program as a systemd service which is configured to wait for the network to come online. 
+See the [example of of using systemd with Zigbee2MQTT](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#optional-running-as-a-daemon-with-systemctl).
 
 This program uses the [flask](https://palletsprojects.com/p/flask/) web framework to provide a 
 convenient web interface for status and control. Flask’s built-in development WSGI server is 

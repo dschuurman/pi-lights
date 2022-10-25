@@ -1,4 +1,4 @@
-# Home Automation script for Zigbee lights and sockets to run on Raspberry Pi
+# Pi-lights home automation script for Zigbee lights and sockets to run on Raspberry Pi
 # (C) 2020 Derek Schuurman
 # License: GNU General Public License (GPL) v3
 # This program is distributed in the hope that it will be useful,
@@ -20,7 +20,7 @@ import signal
 import sched, time
 
 # Constants
-VERSION = 1.05
+VERSION = 1.06
 MQTT_KEEPALIVE = 60
 
 #### Class definitions ####
