@@ -1,6 +1,6 @@
 # pi-lights
 
->***NOTE***: this project has now been subsumed into the [pi-home](https://github.com/dschuurman/pi-home) project.
+>***NOTE***: To monitor sensors as well as control lights, check out [pi-home](https://github.com/dschuurman/pi-home) which is an extension of this project.
 
 This project automates home lighting using using the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) 
 wireless protocol. The software automatically turns lights on at dusk and then turns them off at a preset time.
@@ -13,14 +13,14 @@ POSIX compliant systems using a compatible Zigbee adapter.
 
 
 ## Software Structure
-The program parses a configuration file at start-up to set initial settings.
+The program parses a the `pi-lights.conf` file at start-up to set initial settings.
 The software uses two threads: a main thread runs the control software and another
-thread runs a flask web service for viewing the current state of the system and adjusting the configuration.
+thread runs a flask web service on the local network.
 The code uses a timer signal to turn Zigbee lights and outlets on at dusk 
 (where dusk is determined by your location) and then turns them off at a preset time each day.
 Light on and off events are implemented using a scheduler which stores events in a priority queue. 
-A basic web interface provides a means for configuration and manually controlling the
-lights and outlets.
+The flask web interface provides a means for configuration and manually controlling the
+lights and outlets using a web browser.
 
 # Installation
 
