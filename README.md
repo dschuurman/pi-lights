@@ -1,6 +1,7 @@
 # pi-lights
 
->***NOTE***: To monitor sensors as well as control lights, check out [pi-home](https://github.com/dschuurman/pi-home) which is an extension of this project.
+>***NOTE***: To monitor sensors as well as control lights, check out [pi-home](https://github.com/dschuurman/pi-home)
+which is an update and an extension of this project.
 
 This project automates home lighting using using the [Zigbee](https://en.wikipedia.org/wiki/Zigbee) 
 wireless protocol. The software automatically turns lights on at dusk and then turns them off at a preset time.
@@ -23,9 +24,10 @@ The flask web interface provides a means for configuration and manually controll
 lights and outlets using a web browser.
 
 # Installation
-
-This project was developed on the [Raspberry Pi OS Lite](https://www.raspberrypi.org/software/operating-systems/) platform
-and written in Python 3. The code relies heavily on [Zigbee2MQTT](https://www.zigbee2mqtt.io/)
+This project was developed on a Raspberry Pi running 
+[Raspberry Pi OS Lite](https://www.raspberrypi.org/software/operating-systems/)
+(32-bit or 64-bit) and written in Python version 3. 
+The code relies heavily on [Zigbee2MQTT](https://www.zigbee2mqtt.io/)
 to bridge a network of Zigbee devices to MQTT (a common IoT networking protocol). 
 Zigbee2MQTT supports various [Zigbee USB adapters](https://www.zigbee2mqtt.io/guide/adapters/) 
 along with [numerous Zigbee devices](https://www.zigbee2mqtt.io/supported-devices/).
@@ -36,8 +38,8 @@ This can be installed from the command-line as follows:
 ```
 sudo apt install -y mosquitto mosquitto-clients
 ```
-Since we will be connecting to the MQTT broker locally, we can edit the mosquitto congifuration file
-to explicitly listen *only* on the local loopback interface.
+Since we will be connecting to the MQTT broker locally, we can edit the mosquitto 
+congifuration file to explicitly listen *only* on the local loopback interface.
 This can be done by adding the following lines in `/etc/mosquitto/conf.d/local.conf`:
 ```
 listener 1883 127.0.0.1
@@ -53,22 +55,35 @@ sudo service mosquitto status
 ```
 
 ## Install Zigbee2MQTT
-The next step is to install Zigbee2MQTT on the Raspberry Pi. First, there are several 
-dependencies that need to be installed from the command-line as follows:
+The next step is to install [Zigbee2MQTT](https://www.zigbee2mqtt.io/) on the Raspberry Pi. 
+First, there are several dependencies that need to be installed from the command-line as follows:
 ```
-$ sudo apt-get install -y nodejs npm git make g++ gcc
+sudo apt-get install -y npm git make g++ gcc
 ```
-Once the depencies are installed, Zigbee2MQTT can be installed from github by typing the following commands:
+Unfortunately, the Raspberry Pi repos may have an older version of the nodejs package,
+and Zigbee2MQTT requires a recent version of nodejs. You can add the repository and install a
+recent version of nodejs as follows:
 ```
-cd $HOME
-git clone https://github.com/Koenkk/zigbee2mqtt.git
-sudo mv zigbee2mqtt /opt/zigbee2mqtt
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install nodejs
+```
+Once the dependencies are installed, Zigbee2MQTT can be installed from github by typing the 
+following commands:
+```
+sudo mkdir /opt/zigbee2mqtt
+sudo chown -R ${USER}: /opt/zigbee2mqtt
+git clone --depth 1 https://github.com/Koenkk/zigbee2mqtt.git /opt/zigbee2mqtt
 cd /opt/zigbee2mqtt
 npm ci
 ```
-Zigbee2MQTT requires a [YAML](https://en.wikipedia.org/wiki/YAML) conifiguration file which is located
-at `/opt/zigbee2mqtt/data/configuration.yaml`. 
-Edit the configuration file so that it inlucdes the following settings:
+Note that the `npm ci` may produce some warnings which can be ignored.
+
+Zigbee2MQTT requires a [YAML](https://en.wikipedia.org/wiki/YAML) configuration file which
+may be edited by typing:
+```
+sudo nano /opt/zigbee2mqtt/data/configuration.yaml
+``` 
+Edit the configuration file so that it includes the following settings:
 ```
 homeassistant: false
 permit_join: true
@@ -76,7 +91,7 @@ permit_join: true
 # MQTT settings
 mqtt:
   base_topic: zigbee2mqtt
-  server: 'mqtt://localhost'
+  server: 'mqtt://127.0.0.1'
 
 # Location of Zigbee USB adapter
 serial:
@@ -88,7 +103,7 @@ advanced:
 
 # Start web frontend
 frontend:
-  port: 8080
+  port: 8081
 
 # Enable over-the-air (OTA) updates for devices
 ota:
@@ -98,8 +113,8 @@ ota:
 ```
 Note that this configuration is for a Zigbee USB adapter which appears as `/dev/ttyACM0`. 
 You can use the `dmesg` command to find the device file associated with
-your Zigbee USB adapter and then update the configuration file accordingly.
-Rather than hard-coding a network key, the `network_key` setting used above generates 
+your particular Zigbee USB adapter and then update the configuration file accordingly.
+Rather than hard-coding a unique network key, the `network_key` setting used above generates 
 a new random key when Zigbee2MQTT is first run.
 
 > ***Security Notes***
@@ -112,8 +127,7 @@ from attempting to join and possibly exposing the network key.
 network running on the specified port. While this can be useful for
 setup and debugging, you may wish to disable it later.
 >
-> It is recommended to enable over-the-air (OTA) updates for all devices to keep
-then up-to-date.
+> It is recommended to enable over-the-air (OTA) updates for all devices to keep them up-to-date.
 
 Once the setup and configuration are complete, ensure the Zigbee USB adapter
 is inserted in the Raspberry Pi and start Zigbee2MQTT as follows:
@@ -121,52 +135,54 @@ is inserted in the Raspberry Pi and start Zigbee2MQTT as follows:
 cd /opt/zigbee2mqtt
 npm start
 ```
-This will launch `zigbee2mqtt` from the command-line. Once the
+This will build and launch `zigbee2mqtt` from the command-line. Once the
 it builds and launches successfully, you can exit the program by hitting ctrl-c.
 To launch automaticlaly on boot under Linux, 
 [setup Zigbee2MQTT to run using systemctl](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#starting-zigbee2mqtt).
-For more detailed informatoin about installing Zigbee2MQTT, refer to the 
+For more detailed informatoin about installing Zigbee2MQTT, refer to the official
 [Zigbee2MQTT installation instructions](https://www.zigbee2mqtt.io/guide/installation/01_linux.html#installing).
 
 ## Setup a Zigbee Network of Devices
-
-Next, we need to establish a network of Zigbee devices by
-pairing each new device with the Zigbee hub on the Raspberry Pi.
+Next, we need to establish a network of Zigbee devices by pairing each new device 
+with the Zigbee hub on the Raspberry Pi. Zigbee2MQTT supports a plethora of Zigbee devices 
+and a [friendly device webpage](https://www.zigbee2mqtt.io/supported-devices/)
+includes notes on compatibility, pairing, and details on what values are exposed.
 
 ### Pairing Zigbee devices
-
-Pairing can be easily accomplished by loading the web frontend 
-to Zigbee2MQTT on the Raspberry Pi. The web frontend can be found by pointing a
-web browser to the IP address of the Raspberry Pi and the port number specified
-in the `configuration.yml` file (port 8081 in the example file above). 
-In the web frontend, click the button labelled `Permit join (All)`. 
-Once this button is clicked a countdown will proceed during which time new devices 
-can be paired to the Zigbee network (typically the countdown lasts for 255 seconds).
+Pairing can be easily accomplished using the web frontend to Zigbee2MQTT. 
+The web frontend can be found by pointing a web browser to the IP address 
+of the Raspberry Pi and the port number specified in the `configuration.yaml` file 
+(port 8081 in the example file above). In the web frontend, click the `Devices` tab and 
+then the button labelled `Permit join (All)`. Once this button is clicked a countdown will 
+proceed during which time new devices can be paired to the Zigbee network 
+(typically the countdown lasts for 255 seconds).
 
 Typically a new device is paired by performing a factory reset of the device.
 The way to perform a factory reset varies by device type and manufacturer. 
 For example, Ikea Tradfri bulbs can be factory reset by toggling the power 6 times
 and Ikea Tradfri outlets can be factory reset using a reset button in a small pinhole.
 A few moments after reseting a device, the web frontend should report the pairing of the device. 
-Clicking on the `devices` heading should display a list of paired devices along with each manufacturer,
-model, and IEEE address. The web frontend provides many nifty features like displaying a network map and
-the ability to perform updates on connected devices.
+Clicking on the devices heading in the web frontend should display a list of paired devices 
+along with each manufacturer, model, and IEEE address. The web frontend provides many nifty 
+features like displaying a network map and the ability to perform updates on connected devices.
 
-In addition to the IEEE address each Zigbee device has a "friendly name."
+In addition to the IEEE address each Zigbee device may be configured with a "friendly name."
 By default, the "friendly name" is initialized to the IEEE address, but
 it is recommended that you assign a more meaningful "friendly name" using the web frontend. 
 For example, a bulb could be named "bulb1" or "porch light".
 This allows devices to be controlled and referenced using a *name* rather than
-relying on a cumbersome IEEE address.
+relying on a cumbersome IEEE address. Keep a list of the "friendly names" since
+these will later need to be included in the pi-home configuration file.
 
 ### Binding Zigbee Devices
-One helpful feature of Zigbee networks is the ability to *bind* devices. This feature allows devices
-to directly control each other. For example, a switch (such as this [IKEA E1743](https://www.zigbee2mqtt.io/devices/E1743.html))
+One helpful feature of Zigbee networks is the ability to *bind* devices. This feature allows
+devices to directly control each other. For example, a switch (such as this 
+[IKEA E1743](https://www.zigbee2mqtt.io/devices/E1743.html))
 can bind to an outlet or bulb so that it can be controlled directly by the switch. 
 This can be configured in the Zigbee2MQTT web frontend using the `bind` tab shown
-in the device view. For example, to control a device like a bulb or an outlet with a switch, bind the switch 
-to the corresponding device. The automatic software will control the light (or outlet) at the preset
-turn-on and turn-off times, but binding a switch enables the device to be manually controlled we well.
+in the device view. For example, to control a device like a bulb or an outlet with a switch, 
+bind the switch to the corresponding device. Pi-Home can control lights and outlets
+at preset times, but binding a switch enables the device to be manually controlled as well.
 
 ## Notes on Controlling Zigbee devices over MQTT
 Once devices have been paired, they can be controlled simply by sending 
